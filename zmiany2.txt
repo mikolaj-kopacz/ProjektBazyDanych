@@ -1,0 +1,12 @@
+Zmiany wprowadzone w dokumencie:
+
+1. Ulepszono sekcję "Cel i zastosowanie" – dopisano pełne zdanie, aby brzmiało bardziej formalnie i jasno określało cel projektu.
+2. Ujednolicono nazewnictwo tabel – zastosowano spójne polskie znaki i formę liczby mnogiej (np. Klasy_Pojazdów zamiast Klasy_Pojazdow).
+3. Poprawiono diakrytykę w nazwach pól i tabel (np. Dostępności, Usługi, Płatności).
+4. Dodano nowe pola dla większej kompletności:
+   - W tabeli Klienci: pole „Adres”.
+   - W tabeli Pojazdy: pola „Przebieg” i „Stan_Techniczny”.
+   - W tabeli Rezerwacje: pole „Data_Rezerwacji” i „Cena_Całkowita”.
+   - W tabeli Płatności: pole „Status_Płatności”.
+5. Skrócono i uproszczono nazwy niektórych pól (np. Cena_Jednorazowa → Cena).
+6. Poprawiono drobne błędy językowe i ujednolicono formatowanie opisów tabel.
