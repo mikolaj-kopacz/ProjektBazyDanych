@@ -101,7 +101,155 @@ ID_Serwisu, ID_Pojazdu, Data_Serwisu, Opis, Koszt, Przebieg_W_Chwili_Serwisu
 # 🧩 ERD (DBML) – wersja 1.2
 
 Pełny model DBML:  
-*(tutaj możesz wkleić wersję DBML, którą wygenerowałem wcześniej)*
+//////////////////////////////////////////////////////////
+// Tabela: Klienci
+//////////////////////////////////////////////////////////
+
+Table Klienci {
+  ID_Klienta int [pk, increment, not null]
+  Imie varchar(50) [not null]
+  Nazwisko varchar(50) [not null]
+  PESEL char(11) [unique, not null]
+  Numer_Prawa_Jazdy varchar(20) [not null]
+  Telefon varchar(20) [not null]
+  Email varchar(100) [not null]
+  Adres varchar(150) [not null]
+
+  Note: 'Lista klientów korzystających z usług wypożyczalni.'
+}
+
+//////////////////////////////////////////////////////////
+// Tabela: Pracownicy
+//////////////////////////////////////////////////////////
+
+Table Pracownicy {
+  ID_Pracownika int [pk, increment, not null]
+  Imie varchar(50) [not null]
+  Nazwisko varchar(50) [not null]
+  Stanowisko varchar(50) [not null]
+
+  Note: 'Dane pracowników obsługujących wypożyczalnię.'
+}
+
+//////////////////////////////////////////////////////////
+// Tabela: Klasy_Pojazdow
+//////////////////////////////////////////////////////////
+
+Table Klasy_Pojazdow {
+  ID_Klasy int [pk, increment, not null]
+  Nazwa_Klasy varchar(20) [not null]
+  Cena_Za_Dobe decimal(10,2) [not null]
+
+  Note: 'Słownik klas pojazdów wraz z ceną za dobę.'
+}
+
+//////////////////////////////////////////////////////////
+// Tabela: Pojazdy
+//////////////////////////////////////////////////////////
+
+Table Pojazdy {
+  ID_Pojazdu int [pk, increment, not null]
+  ID_Klasy int [ref: > Klasy_Pojazdow.ID_Klasy, not null]
+  Marka varchar(50) [not null]
+  Model varchar(50) [not null]
+  Rok_Produkcji year [not null]
+  Numer_Rejestracyjny varchar(15) [unique, not null]
+  Przebieg int [not null]
+  Stan_Techniczny varchar(100) [not null]
+  Status_Dostepnosci enum('Dostępny', 'Wypożyczony', 'W serwisie') [not null]
+
+  indexes {
+    (Numer_Rejestracyjny)
+  }
+
+  Note: 'Flota pojazdów dostępnych w wypożyczalni.'
+}
+
+//////////////////////////////////////////////////////////
+// Tabela: Rezerwacje
+//////////////////////////////////////////////////////////
+
+Table Rezerwacje {
+  ID_Rezerwacji int [pk, increment, not null]
+  ID_Klienta int [ref: > Klienci.ID_Klienta, not null]
+  ID_Pojazdu int [ref: > Pojazdy.ID_Pojazdu, not null]
+  ID_Pracownika int [ref: > Pracownicy.ID_Pracownika, not null]
+  Data_Rezerwacji date [not null]
+  Data_Odbioru date [not null]
+  Data_Zwrotu date [not null]
+  Miejsce_Odbioru varchar(100) [not null]
+  Cena_Calkowita decimal(10,2) [not null]
+  Status_Rezerwacji enum('Potwierdzona', 'Zakończona', 'Anulowana') [not null]
+
+  Note: 'Rezerwacje zawarte przez klientów, obsłużone przez pracownika.'
+}
+
+//////////////////////////////////////////////////////////
+// CHECK constraints (komentarze, bo DBML nie obsługuje CHECK)
+//////////////////////////////////////////////////////////
+
+// CHECK: Data_Rezerwacji <= Data_Odbioru
+// CHECK: Data_Odbioru <= Data_Zwrotu
+// CHECK: Cena_Calkowita > 0
+
+//////////////////////////////////////////////////////////
+// Tabela: Uslugi_Dodatkowe
+//////////////////////////////////////////////////////////
+
+Table Uslugi_Dodatkowe {
+  ID_Uslugi int [pk, increment, not null]
+  Nazwa_Uslugi varchar(100) [not null]
+  Cena decimal(10,2) [not null]
+
+  Note: 'Dodatkowe usługi oferowane klientom (np. GPS, fotelik).'
+}
+
+//////////////////////////////////////////////////////////
+// Tabela: Rezerwacje_Uslugi (N:M)
+//////////////////////////////////////////////////////////
+
+Table Rezerwacje_Uslugi {
+  ID_Rezerwacji_Uslugi int [pk, increment, not null]
+  ID_Rezerwacji int [ref: > Rezerwacje.ID_Rezerwacji, not null]
+  ID_Uslugi int [ref: > Uslugi_Dodatkowe.ID_Uslugi, not null]
+
+  indexes {
+    (ID_Rezerwacji, ID_Uslugi) [unique]
+  }
+
+  Note: 'Powiązanie rezerwacji z zakupionymi usługami dodatkowymi.'
+}
+
+//////////////////////////////////////////////////////////
+// Tabela: Platnosci
+//////////////////////////////////////////////////////////
+
+Table Platnosci {
+  ID_Platnosci int [pk, increment, not null]
+  ID_Rezerwacji int [ref: > Rezerwacje.ID_Rezerwacji, not null]
+  Kwota_Calkowita decimal(10,2) [not null]
+  Data_Platnosci date [not null]
+  Forma_Platnosci enum('Gotówka', 'Karta', 'Przelew') [not null]
+  Status_Platnosci enum('Oczekująca', 'Zrealizowana', 'Anulowana') [not null]
+  Numer_Faktury varchar(30) [not null]
+
+  Note: 'Płatności i faktury powiązane z rezerwacjami.'
+}
+
+//////////////////////////////////////////////////////////
+// Tabela: Serwisy (Historia pojazdów)
+//////////////////////////////////////////////////////////
+
+Table Serwisy {
+  ID_Serwisu int [pk, increment, not null]
+  ID_Pojazdu int [ref: > Pojazdy.ID_Pojazdu, not null]
+  Data_Serwisu date [not null]
+  Opis varchar(200) [not null]
+  Koszt decimal(10,2) [not null]
+  Przebieg_W_Chwili_Serwisu int [not null]
+
+  Note: 'Historia serwisowa i naprawy wykonane na pojazdach.'
+}
 
 ---
 
