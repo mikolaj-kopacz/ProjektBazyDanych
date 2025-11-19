@@ -1,0 +1,157 @@
+1. Znajdź klientów, którzy wydali najwięcej pieniędzy na wynajmy (TOP 5)
+
+SQL:
+
+SELECT k.ID_Klienta, k.Imie, k.Nazwisko, SUM(p.Kwota_Calkowita) AS suma
+FROM Platnosci p
+JOIN Rezerwacje r ON p.ID_Rezerwacji = r.ID_Rezerwacji
+JOIN Klienci k ON r.ID_Klienta = k.ID_Klienta
+GROUP BY k.ID_Klienta
+ORDER BY suma DESC
+LIMIT 5;
+
+2. Lista pojazdów, które były serwisowane ponad 3 razy
+
+SQL:
+
+SELECT p.ID_Pojazdu, p.Marka, p.Model, COUNT(s.ID_Serwisu) AS liczba_serwisow
+FROM Pojazdy p
+JOIN Serwisy s ON p.ID_Pojazdu = s.ID_Pojazdu
+GROUP BY p.ID_Pojazdu
+HAVING COUNT(s.ID_Serwisu) > 3;
+
+3. Obciążenie pracowników – ile rezerwacji obsłużył każdy
+
+SQL:
+
+SELECT pr.ID_Pracownika, pr.Imie, pr.Nazwisko, COUNT(r.ID_Rezerwacji) AS liczba_rezerwacji
+FROM Pracownicy pr
+LEFT JOIN Rezerwacje r ON pr.ID_Pracownika = r.ID_Pracownika
+GROUP BY pr.ID_Pracownika;
+
+4. Samochody obecnie wypożyczone (status = 'Wypożyczony')
+
+SQL:
+
+SELECT Marka, Model, Numer_Rejestracyjny
+FROM Pojazdy
+WHERE Status_Dostepnosci = 'Wypożyczony';
+
+5. Rezerwacje, których koszt przekracza średnią cenę wszystkich rezerwacji
+
+SQL:
+
+SELECT *
+FROM Rezerwacje
+WHERE Cena_Calkowita > (SELECT AVG(Cena_Calkowita) FROM Rezerwacje);
+
+6. Ile razy każda usługa była kupiona (posortowane malejąco)
+
+SQL:
+
+SELECT u.Nazwa_Uslugi, COUNT(ru.ID_Uslugi) AS ile_razy
+FROM Uslugi_Dodatkowe u
+LEFT JOIN Rezerwacje_Uslugi ru ON u.ID_Uslugi = ru.ID_Uslugi
+GROUP BY u.ID_Uslugi
+ORDER BY ile_razy DESC;
+
+7. Klienci, którzy nigdy nic nie wypożyczyli
+
+SQL:
+
+SELECT k.*
+FROM Klienci k
+LEFT JOIN Rezerwacje r ON k.ID_Klienta = r.ID_Klienta
+WHERE r.ID_Rezerwacji IS NULL;
+
+8. Najdroższa rezerwacja każdego klienta (funkcja okienkowa)
+
+SQL:
+
+SELECT *
+FROM (
+    SELECT k.ID_Klienta, k.Imie, k.Nazwisko,
+           r.ID_Rezerwacji, r.Cena_Calkowita,
+           ROW_NUMBER() OVER (PARTITION BY k.ID_Klienta ORDER BY r.Cena_Calkowita DESC) AS rn
+    FROM Rezerwacje r
+    JOIN Klienci k ON r.ID_Klienta = k.ID_Klienta
+) t
+WHERE rn = 1;
+
+9. Pojazdy z największą liczbą rezerwacji (TOP 3)
+
+SQL:
+
+SELECT p.ID_Pojazdu, p.Marka, p.Model, COUNT(r.ID_Rezerwacji) AS ile_razy
+FROM Pojazdy p
+JOIN Rezerwacje r ON p.ID_Pojazdu = r.ID_Pojazdu
+GROUP BY p.ID_Pojazdu
+ORDER BY ile_razy DESC
+LIMIT 3;
+
+10. Klienci, którzy korzystali z usług dodatkowych
+
+SQL:
+
+SELECT DISTINCT k.ID_Klienta, k.Imie, k.Nazwisko
+FROM Klienci k
+JOIN Rezerwacje r ON k.ID_Klienta = r.ID_Klienta
+JOIN Rezerwacje_Uslugi ru ON r.ID_Rezerwacji = ru.ID_Rezerwacji;
+
+11. Średni koszt serwisu w podziale na markę pojazdu
+
+SQL:
+
+SELECT p.Marka, AVG(s.Koszt) AS sredni_koszt
+FROM Serwisy s
+JOIN Pojazdy p ON s.ID_Pojazdu = p.ID_Pojazdu
+GROUP BY p.Marka;
+
+12. Rezerwacje trwające najdłużej (różnica dat)
+
+SQL:
+
+SELECT r.ID_Rezerwacji, k.Imie, k.Nazwisko,
+       (r.Data_Zwrotu - r.Data_Odbioru) AS dni
+FROM Rezerwacje r
+JOIN Klienci k ON k.ID_Klienta = r.ID_Klienta
+ORDER BY dni DESC;
+
+13. Miesięczne przychody wypożyczalni
+
+SQL:
+
+SELECT DATE_TRUNC('month', Data_Platnosci) AS miesiac,
+       SUM(Kwota_Calkowita) AS przychod
+FROM Platnosci
+GROUP BY DATE_TRUNC('month', Data_Platnosci)
+ORDER BY miesiac;
+
+14. Usługi dodane do najdroższej rezerwacji
+
+SQL:
+
+SELECT u.Nazwa_Uslugi, u.Cena
+FROM Uslugi_Dodatkowe u
+JOIN Rezerwacje_Uslugi ru ON u.ID_Uslugi = ru.ID_Uslugi
+WHERE ru.ID_Rezerwacji = (
+    SELECT ID_Rezerwacji
+    FROM Rezerwacje
+    ORDER BY Cena_Calkowita DESC
+    LIMIT 1
+);
+
+15. Samochody wymagające serwisu — przebieg od ostatniego serwisu > 15 000 km
+
+SQL:
+
+WITH ostatni_serwis AS (
+    SELECT ID_Pojazdu,
+           MAX(Przebieg_W_Chwili_Serwisu) AS przebieg_po_serwisie
+    FROM Serwisy
+    GROUP BY ID_Pojazdu
+)
+SELECT p.ID_Pojazdu, p.Marka, p.Model, p.Przebieg
+FROM Pojazdy p
+JOIN ostatni_serwis s ON p.ID_Pojazdu = s.ID_Pojazdu
+WHERE p.Przebieg - s.przebieg_po_serwisie > 15000;
