@@ -1,7 +1,17 @@
-1. Znajdź klientów, którzy wydali najwięcej pieniędzy na wynajmy (TOP 5)
+1. TOP 5 klientów, którzy wydali najwięcej pieniędzy
+Algorytm:
+
+Pobierz wszystkie rekordy z tabeli Płatności.
+
+Dla każdej płatności ustal, którego klienta dotyczy — poprzez tabelę Rezerwacje.
+
+Zsumuj wszystkie płatności dla każdego klienta.
+
+Posortuj klientów malejąco wg sumy wydatków.
+
+Zwróć pierwsze 5 rekordów.
 
 SQL:
-
 SELECT k.ID_Klienta, k.Imie, k.Nazwisko, SUM(p.Kwota_Calkowita) AS suma
 FROM Platnosci p
 JOIN Rezerwacje r ON p.ID_Rezerwacji = r.ID_Rezerwacji
@@ -10,45 +20,85 @@ GROUP BY k.ID_Klienta
 ORDER BY suma DESC
 LIMIT 5;
 
-2. Lista pojazdów, które były serwisowane ponad 3 razy
+2. Pojazdy serwisowane ponad 3 razy
+Algorytm:
+
+Pobierz wszystkie wpisy serwisowe z tabeli Serwisy.
+
+Pogrupuj je według ID pojazdu.
+
+Policz liczbę serwisów dla każdego pojazdu.
+
+Wybierz pojazdy, które mają > 3 serwisów.
+
+Połącz wynik z tabelą Pojazdy i pobierz dane auta.
 
 SQL:
-
 SELECT p.ID_Pojazdu, p.Marka, p.Model, COUNT(s.ID_Serwisu) AS liczba_serwisow
 FROM Pojazdy p
 JOIN Serwisy s ON p.ID_Pojazdu = s.ID_Pojazdu
 GROUP BY p.ID_Pojazdu
 HAVING COUNT(s.ID_Serwisu) > 3;
 
-3. Obciążenie pracowników – ile rezerwacji obsłużył każdy
+3. Obciążenie pracowników (ile rezerwacji obsłużył każdy)
+Algorytm:
+
+Pobierz pracowników z tabeli Pracownicy.
+
+Powiąż ich z tabelą Rezerwacje poprzez ID_Pracownika.
+
+Policz, ile rezerwacji obsłużył każdy pracownik.
+
+Zwróć listę pracowników wraz z liczbą rezerwacji.
 
 SQL:
-
 SELECT pr.ID_Pracownika, pr.Imie, pr.Nazwisko, COUNT(r.ID_Rezerwacji) AS liczba_rezerwacji
 FROM Pracownicy pr
 LEFT JOIN Rezerwacje r ON pr.ID_Pracownika = r.ID_Pracownika
 GROUP BY pr.ID_Pracownika;
 
-4. Samochody obecnie wypożyczone (status = 'Wypożyczony')
+4. Samochody aktualnie wypożyczone
+Algorytm:
+
+Przejrzyj tabelę Pojazdy.
+
+Wybierz rekordy, gdzie Status_Dostepnosci = 'Wypożyczony'.
+
+Zwróć dane pojazdów.
 
 SQL:
-
 SELECT Marka, Model, Numer_Rejestracyjny
 FROM Pojazdy
 WHERE Status_Dostepnosci = 'Wypożyczony';
 
-5. Rezerwacje, których koszt przekracza średnią cenę wszystkich rezerwacji
+5. Rezerwacje droższe niż średnia cena wynajmu
+Algorytm:
+
+Oblicz średnią cenę wszystkich rezerwacji.
+
+Pobierz rezerwacje.
+
+Porównaj każdą cenę z obliczoną średnią.
+
+Zwróć tylko te powyżej średniej.
 
 SQL:
-
 SELECT *
 FROM Rezerwacje
 WHERE Cena_Calkowita > (SELECT AVG(Cena_Calkowita) FROM Rezerwacje);
 
-6. Ile razy każda usługa była kupiona (posortowane malejąco)
+6. Popularność usług dodatkowych
+Algorytm:
+
+Pobierz listę usług.
+
+Połącz je z tabelą Rezerwacje_Uslugi.
+
+Policz, ile razy dana usługa wystąpiła.
+
+Posortuj malejąco według liczby użyć.
 
 SQL:
-
 SELECT u.Nazwa_Uslugi, COUNT(ru.ID_Uslugi) AS ile_razy
 FROM Uslugi_Dodatkowe u
 LEFT JOIN Rezerwacje_Uslugi ru ON u.ID_Uslugi = ru.ID_Uslugi
@@ -56,18 +106,30 @@ GROUP BY u.ID_Uslugi
 ORDER BY ile_razy DESC;
 
 7. Klienci, którzy nigdy nic nie wypożyczyli
+Algorytm:
+
+Pobierz wszystkich klientów.
+
+Spróbuj dopasować ich do tabeli rezerwacji.
+
+Zwróć tylko tych, którzy nie mają żadnej rezerwacji.
 
 SQL:
-
 SELECT k.*
 FROM Klienci k
 LEFT JOIN Rezerwacje r ON k.ID_Klienta = r.ID_Klienta
 WHERE r.ID_Rezerwacji IS NULL;
 
 8. Najdroższa rezerwacja każdego klienta (funkcja okienkowa)
+Algorytm:
+
+Pobierz wszystkie rezerwacje klientów.
+
+Dla każdej grupy (klienta) nadaj numerację malejąco po cenie.
+
+Wybierz tylko wiersze z numerem 1.
 
 SQL:
-
 SELECT *
 FROM (
     SELECT k.ID_Klienta, k.Imie, k.Nazwisko,
@@ -78,10 +140,20 @@ FROM (
 ) t
 WHERE rn = 1;
 
-9. Pojazdy z największą liczbą rezerwacji (TOP 3)
+9. TOP 3 pojazdy z największą liczbą rezerwacji
+Algorytm:
+
+Pobierz wszystkie połączenia pojazd–rezerwacja.
+
+Pogrupuj je po pojeździe.
+
+Policz liczbę rezerwacji.
+
+Posortuj malejąco.
+
+Zwóć pierwsze trzy rekordy.
 
 SQL:
-
 SELECT p.ID_Pojazdu, p.Marka, p.Model, COUNT(r.ID_Rezerwacji) AS ile_razy
 FROM Pojazdy p
 JOIN Rezerwacje r ON p.ID_Pojazdu = r.ID_Pojazdu
@@ -90,27 +162,47 @@ ORDER BY ile_razy DESC
 LIMIT 3;
 
 10. Klienci, którzy korzystali z usług dodatkowych
+Algorytm:
+
+Pobierz wszystkie rezerwacje i klientów.
+
+Sprawdź, które rezerwacje mają dodatkowe usługi.
+
+Zwróć unikalnych klientów.
 
 SQL:
-
 SELECT DISTINCT k.ID_Klienta, k.Imie, k.Nazwisko
 FROM Klienci k
 JOIN Rezerwacje r ON k.ID_Klienta = r.ID_Klienta
 JOIN Rezerwacje_Uslugi ru ON r.ID_Rezerwacji = ru.ID_Rezerwacji;
 
-11. Średni koszt serwisu w podziale na markę pojazdu
+11. Średni koszt serwisu dla każdej marki
+Algorytm:
+
+Pobierz dane serwisowe.
+
+Połącz z tabelą pojazdów (żeby znać markę).
+
+Pogrupuj wg marki.
+
+Oblicz średni koszt serwisu.
 
 SQL:
-
 SELECT p.Marka, AVG(s.Koszt) AS sredni_koszt
 FROM Serwisy s
 JOIN Pojazdy p ON s.ID_Pojazdu = p.ID_Pojazdu
 GROUP BY p.Marka;
 
-12. Rezerwacje trwające najdłużej (różnica dat)
+12. Rezerwacje trwające najdłużej
+Algorytm:
+
+Oblicz różnicę między datą zwrotu a datą odbioru.
+
+Połącz z klientami dla lepszej czytelności.
+
+Posortuj malejąco wg liczby dni.
 
 SQL:
-
 SELECT r.ID_Rezerwacji, k.Imie, k.Nazwisko,
        (r.Data_Zwrotu - r.Data_Odbioru) AS dni
 FROM Rezerwacje r
@@ -118,19 +210,33 @@ JOIN Klienci k ON k.ID_Klienta = r.ID_Klienta
 ORDER BY dni DESC;
 
 13. Miesięczne przychody wypożyczalni
+Algorytm:
+
+Pobierz wszystkie płatności.
+
+Zgrupuj je wg miesiąca.
+
+Policz sumę kwot dla każdego miesiąca.
+
+Posortuj rosnąco po czasie.
 
 SQL:
-
 SELECT DATE_TRUNC('month', Data_Platnosci) AS miesiac,
        SUM(Kwota_Calkowita) AS przychod
 FROM Platnosci
 GROUP BY DATE_TRUNC('month', Data_Platnosci)
 ORDER BY miesiac;
 
-14. Usługi dodane do najdroższej rezerwacji
+14. Usługi w najdroższej rezerwacji
+Algorytm:
+
+Znajdź rezerwację o największej cenie.
+
+Pobierz jej ID.
+
+Pobierz wszystkie usługi powiązane z tą rezerwacją.
 
 SQL:
-
 SELECT u.Nazwa_Uslugi, u.Cena
 FROM Uslugi_Dodatkowe u
 JOIN Rezerwacje_Uslugi ru ON u.ID_Uslugi = ru.ID_Uslugi
@@ -141,10 +247,18 @@ WHERE ru.ID_Rezerwacji = (
     LIMIT 1
 );
 
-15. Samochody wymagające serwisu — przebieg od ostatniego serwisu > 15 000 km
+15. Samochody wymagające serwisu (15 000 km od ostatniego)
+Algorytm:
+
+Pobierz ostatni serwis dla każdego pojazdu.
+
+Pobierz aktualny przebieg pojazdów.
+
+Oblicz różnicę przebiegu.
+
+Zwróć pojazdy, u których różnica > 15000 km.
 
 SQL:
-
 WITH ostatni_serwis AS (
     SELECT ID_Pojazdu,
            MAX(Przebieg_W_Chwili_Serwisu) AS przebieg_po_serwisie
