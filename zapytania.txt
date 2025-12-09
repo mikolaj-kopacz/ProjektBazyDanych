@@ -1,247 +1,247 @@
-1. TOP 5 klientów, którzy wydali najwięcej pieniędzy
-Algorytm
-
-Pobierz wszystkie płatności.
-
-Połącz je z rezerwacjami i klientami.
-
-Zsumuj kwoty dla każdego klienta.
-
-Posortuj malejąco.
-
-Zwróć 5 największych wartości.
-
-SQL
-SELECT k.id_klienta, k.imie, k.nazwisko, SUM(p.kwota_calkowita) AS suma
-FROM platnosci p
-JOIN rezerwacje r ON p.id_rezerwacji = r.id_rezerwacji
-JOIN klienci k ON r.id_klienta = k.id_klienta
-GROUP BY k.id_klienta
-ORDER BY suma DESC
-LIMIT 5;
-
-2. Pojazdy serwisowane ponad 3 razy
-Algorytm
-
-Pobierz wpisy z serwisów.
-
-Pogrupuj po pojeździe.
-
-Policz serwisy.
-
-Zwróć pojazdy z liczbą > 3.
-
-SQL
-SELECT p.id_pojazdu, p.marka, p.model, COUNT(s.id_serwisu) AS liczba_serwisow
-FROM pojazdy p
-JOIN serwisy s ON p.id_pojazdu = s.id_pojazdu
-GROUP BY p.id_pojazdu
-HAVING COUNT(s.id_serwisu) > 3;
-
-3. Obciążenie pracowników
-Algorytm
-
-Pobierz pracowników.
-
-Połącz z rezerwacjami.
-
-Policz rezerwacje dla każdego pracownika.
-
-SQL
-SELECT pr.id_pracownika, pr.imie, pr.nazwisko, COUNT(r.id_rezerwacji) AS liczba_rezerwacji
-FROM pracownicy pr
-LEFT JOIN rezerwacje r ON pr.id_pracownika = r.id_pracownika
-GROUP BY pr.id_pracownika;
-
-4. Samochody aktualnie wypożyczone
-Algorytm
-
-Pobierz pojazdy.
-
-Wybierz te ze statusem "wypożyczony".
-
-SQL
-SELECT marka, model, numer_rejestracyjny
-FROM pojazdy
-WHERE status_dostepnosci = 'Wypożyczony';
-
-5. Rezerwacje powyżej średniej ceny
-Algorytm
-
-Oblicz średnią cenę.
-
-Zwróć rezerwacje droższe niż średnia.
-
-SQL
-SELECT *
-FROM rezerwacje
-WHERE cena_calkowita > (SELECT AVG(cena_calkowita) FROM rezerwacje);
-
-6. Popularność usług dodatkowych
-Algorytm
-
-Pobierz listę usług.
-
-Zlicz wystąpienia w tabeli rezerwacje_uslugi.
-
-SQL
-SELECT u.nazwa_uslugi, COUNT(ru.id_uslugi) AS ile_razy
-FROM uslugi_dodatkowe u
-LEFT JOIN rezerwacje_uslugi ru ON u.id_uslugi = ru.id_uslugi
-GROUP BY u.id_uslugi
-ORDER BY ile_razy DESC;
-
-7. Klienci bez rezerwacji
-Algorytm
-
-Pobierz klientów.
-
-Zrób lewy join z rezerwacjami.
-
-Zwróć tych bez rezerwacji.
-
-SQL
-SELECT k.*
-FROM klienci k
-LEFT JOIN rezerwacje r ON k.id_klienta = r.id_klienta
-WHERE r.id_rezerwacji IS NULL;
-
-8. Najdroższa rezerwacja każdego klienta
-Algorytm
-
-Pobierz wszystkie rezerwacje.
-
-Nadaj numer w grupie (funkcja okienkowa).
-
-Wybierz pierwszą w każdej grupie.
-
-SQL
-SELECT *
-FROM (
-    SELECT k.id_klienta, k.imie, k.nazwisko,
-           r.id_rezerwacji, r.cena_calkowita,
-           ROW_NUMBER() OVER (PARTITION BY k.id_klienta ORDER BY r.cena_calkowita DESC) AS rn
-    FROM rezerwacje r
-    JOIN klienci k ON r.id_klienta = k.id_klienta
-) t
-WHERE rn = 1;
-
-9. TOP 3 pojazdy z największą liczbą rezerwacji
-Algorytm
-
-Pogrupuj rezerwacje po pojeździe.
-
-Policz rezerwacje.
-
-Zwróć 3 największe.
-
-SQL
-SELECT p.id_pojazdu, p.marka, p.model, COUNT(r.id_rezerwacji) AS ile_razy
-FROM pojazdy p
-JOIN rezerwacje r ON p.id_pojazdu = r.id_pojazdu
-GROUP BY p.id_pojazdu
-ORDER BY ile_razy DESC
-LIMIT 3;
-
-10. Klienci korzystający z usług dodatkowych
-Algorytm
-
-Pobierz powiązania rezerwacji z usługami.
-
-Dołącz do klientów.
-
-Zwróć unikalnych klientów.
-
-SQL
-SELECT DISTINCT k.id_klienta, k.imie, k.nazwisko
-FROM klienci k
-JOIN rezerwacje r ON k.id_klienta = r.id_klienta
-JOIN rezerwacje_uslugi ru ON r.id_rezerwacji = ru.id_rezerwacji;
-
-11. Średni koszt serwisu dla każdej marki
-Algorytm
-
-Połącz serwisy z pojazdami.
-
-Pogrupuj po marce.
-
-Oblicz średnią.
-
-SQL
-SELECT p.marka, AVG(s.koszt) AS sredni_koszt
-FROM serwisy s
-JOIN pojazdy p ON s.id_pojazdu = p.id_pojazdu
-GROUP BY p.marka;
-
-12. Najdłuższe rezerwacje
-Algorytm
-
-Oblicz różnicę dat.
-
-Połącz z klientami.
-
-Posortuj malejąco.
-
-SQL
-SELECT r.id_rezerwacji, k.imie, k.nazwisko,
-       (r.data_zwrotu - r.data_odbioru) AS dni
-FROM rezerwacje r
-JOIN klienci k ON k.id_klienta = r.id_klienta
-ORDER BY dni DESC;
-
-13. Miesięczne przychody
-Algorytm
-
-Zgrupuj płatności po miesiącu.
-
-Policz sumę.
-
-SQL
-SELECT DATE_TRUNC('month', data_platnosci) AS miesiac,
-       SUM(kwota_calkowita) AS przychod
-FROM platnosci
-GROUP BY DATE_TRUNC('month', data_platnosci)
-ORDER BY miesiac;
-
-14. Usługi w najdroższej rezerwacji
-Algorytm
-
-Znajdź najdroższą rezerwację.
-
-Pobierz jej ID.
-
-Wyświetl usługi powiązane z tym ID.
-
-SQL
-SELECT u.nazwa_uslugi, u.cena
-FROM uslugi_dodatkowe u
-JOIN rezerwacje_uslugi ru ON u.id_uslugi = ru.id_uslugi
-WHERE ru.id_rezerwacji = (
-    SELECT id_rezerwacji
-    FROM rezerwacje
-    ORDER BY cena_calkowita DESC
-    LIMIT 1
-);
-
-15. Samochody wymagające serwisu (> 15 000 km)
-Algorytm
-
-Pobierz ostatni serwis pojazdu.
-
-Pobierz aktualny przebieg pojazdów.
-
-Oblicz różnicę.
-
-Zwróć te > 15000.
-
-SQL
-WITH ostatni_serwis AS (
-    SELECT id_pojazdu,
-           MAX(przebieg_w_chwili_serwisu) AS przebieg_po_serwisie
-    FROM serwisy
-    GROUP BY id_pojazdu
-)
-SELECT p.id_pojazdu, p.marka, p.model, p.przebieg
-FROM pojazdy p
-JOIN ostatni_serwis s ON p.id_pojazdu = s.id_pojazdu
-WHERE p.przebieg - s.przebieg_po_serwisie > 15000;
+---------------------------------------------------------------------------------
+-- 1. ALGORYTM: WYSZUKIWARKA DOSTĘPNYCH SAMOCHODÓW
+-- Opis:
+-- Funkcja sprawdza dostępność aut w zadanym terminie.
+-- Logika:
+-- 1. Pobieramy pojazdy, które nie są "W serwisie".
+-- 2. Filtrujemy po klasie (opcjonalnie, jeśli podano ID klasy).
+-- 3. Kluczowy moment: Używamy NOT EXISTS, aby wykluczyć auta, które mają już 
+--    potwierdzoną rezerwację nakładającą się na nasze daty.
+--    Zasada nakładania dat: (StartA <= KoniecB) ORAZ (KoniecA >= StartB).
+---------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION ZnajdzDostepnePojazdy(p_data_od DATE, p_data_do DATE, p_klasa_id INT DEFAULT NULL)
+RETURNS TABLE (
+    Marka VARCHAR,
+    Model VARCHAR,
+    Numer_Rejestracyjny VARCHAR,
+    Cena_Za_Dobe DECIMAL
+) 
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT p.Marka, p.Model, p.Numer_Rejestracyjny, k.Cena_Za_Dobe
+    FROM Pojazdy p
+    JOIN Klasy_Pojazdow k ON p.ID_Klasy = k.ID_Klasy
+    WHERE p.Status_Dostepnosci != 'W serwisie'
+      AND (p_klasa_id IS NULL OR p.ID_Klasy = p_klasa_id)
+      AND NOT EXISTS (
+          SELECT 1 
+          FROM Rezerwacje r
+          WHERE r.ID_Pojazdu = p.ID_Pojazdu
+          AND r.Status_Rezerwacji != 'Anulowana'
+          AND (r.Data_Odbioru <= p_data_do AND r.Data_Zwrotu >= p_data_od)
+      );
+END;
+$$ LANGUAGE plpgsql;
+
+
+---------------------------------------------------------------------------------
+-- 2. ALGORYTM: MIESIĘCZNY RAPORT PRZYCHODÓW
+-- Opis:
+-- Funkcja generuje zestawienie finansowe dla konkretnego roku.
+-- Logika:
+-- 1. Pobieramy płatności tylko ze statusem "Zrealizowana".
+-- 2. Grupujemy wyniki po miesiącu (używając funkcji TO_CHAR i EXTRACT).
+-- 3. Sortujemy chronologicznie od stycznia do grudnia.
+---------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION RaportPrzychodow(p_rok INT)
+RETURNS TABLE (
+    Miesiac TEXT,
+    Liczba_Transakcji BIGINT,
+    Suma_Przychodow DECIMAL
+) 
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        TO_CHAR(p.Data_Platnosci, 'Month'),
+        COUNT(p.ID_Platnosci),
+        SUM(p.Kwota_Calkowita)
+    FROM Platnosci p
+    WHERE EXTRACT(YEAR FROM p.Data_Platnosci) = p_rok
+      AND p.Status_Platnosci = 'Zrealizowana'
+    GROUP BY TO_CHAR(p.Data_Platnosci, 'Month'), EXTRACT(MONTH FROM p.Data_Platnosci)
+    ORDER BY EXTRACT(MONTH FROM p.Data_Platnosci);
+END;
+$$ LANGUAGE plpgsql;
+
+
+---------------------------------------------------------------------------------
+-- 3. ALGORYTM: DETEKCJA POJAZDÓW DO SERWISU
+-- Opis:
+-- Algorytm "Smart Check" znajdujący auta, które przekroczyły limit kilometrów.
+-- Logika:
+-- 1. Dla każdego pojazdu znajdujemy przebieg przy ostatnim serwisie (MAX).
+-- 2. Jeśli auto nie miało serwisu, COALESCE zamienia NULL na 0.
+-- 3. Obliczamy różnicę: Aktualny Przebieg - Przebieg Serwisowy.
+-- 4. Zwracamy te auta, gdzie różnica jest większa niż podany limit (np. 15000 km).
+---------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION SprawdzPojazdyDoSerwisu(limit_km INT)
+RETURNS TABLE (
+    Pojazd VARCHAR,
+    Rejestracja VARCHAR,
+    Przebieg_Aktualny INT,
+    Km_Od_Ostatniego_Serwisu INT
+) 
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        (p.Marka || ' ' || p.Model)::VARCHAR,
+        p.Numer_Rejestracyjny,
+        p.Przebieg,
+        (p.Przebieg - COALESCE(
+            (SELECT MAX(s.Przebieg_W_Chwili_Serwisu) FROM Serwisy s WHERE s.ID_Pojazdu = p.ID_Pojazdu), 
+            0)
+        )::INT
+    FROM Pojazdy p
+    WHERE (p.Przebieg - COALESCE(
+            (SELECT MAX(s.Przebieg_W_Chwili_Serwisu) FROM Serwisy s WHERE s.ID_Pojazdu = p.ID_Pojazdu), 
+            0)
+          ) > limit_km;
+END;
+$$ LANGUAGE plpgsql;
+
+
+---------------------------------------------------------------------------------
+-- 4. ALGORYTM: RANKING KLIENTÓW VIP
+-- Opis:
+-- Wyłania najlepszych klientów na podstawie sumy wydanych pieniędzy.
+-- Logika:
+-- 1. Łączymy Klienci -> Rezerwacje -> Płatności.
+-- 2. Bierzemy pod uwagę tylko opłacone transakcje ('Zrealizowana').
+-- 3. Sumujemy kwoty i sortujemy malejąco (DESC).
+-- 4. LIMIT ogranicza wynik do np. top 3 lub top 5 osób.
+---------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION RankingKlientowVIP(top_n INT)
+RETURNS TABLE (
+    Klient VARCHAR,
+    Liczba_Rezerwacji BIGINT,
+    Wydana_Kwota DECIMAL
+) 
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        (k.Imie || ' ' || k.Nazwisko)::VARCHAR,
+        COUNT(r.ID_Rezerwacji),
+        SUM(p.Kwota_Calkowita)
+    FROM Klienci k
+    JOIN Rezerwacje r ON k.ID_Klienta = r.ID_Klienta
+    JOIN Platnosci p ON r.ID_Rezerwacji = p.ID_Rezerwacji
+    WHERE p.Status_Platnosci = 'Zrealizowana'
+    GROUP BY k.ID_Klienta, k.Imie, k.Nazwisko
+    ORDER BY SUM(p.Kwota_Calkowita) DESC
+    LIMIT top_n;
+END;
+$$ LANGUAGE plpgsql;
+
+
+---------------------------------------------------------------------------------
+-- 5. ALGORYTM: EFEKTYWNOŚĆ PRACOWNIKÓW
+-- Opis:
+-- Mierzy, ile rezerwacji obsłużył każdy pracownik i na jaką kwotę.
+-- Logika:
+-- 1. Używamy LEFT JOIN, aby uwzględnić pracowników, którzy nie mają żadnych rezerwacji (zwróci 0).
+-- 2. Funkcja COALESCE zamienia NULL na 0 przy sumowaniu kwot.
+-- 3. HAVING pozwala odfiltrować pracowników poniżej minimalnej liczby rezerwacji.
+---------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION EfektywnoscPracownikow(min_rezerwacji INT)
+RETURNS TABLE (
+    Pracownik VARCHAR,
+    Stanowisko VARCHAR,
+    Obsluzone_Rezerwacje BIGINT,
+    Wartosc_Umow DECIMAL
+) 
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        (pr.Imie || ' ' || pr.Nazwisko)::VARCHAR,
+        pr.Stanowisko,
+        COUNT(r.ID_Rezerwacji),
+        COALESCE(SUM(r.Cena_Calkowita), 0)
+    FROM Pracownicy pr
+    LEFT JOIN Rezerwacje r ON pr.ID_Pracownika = r.ID_Pracownika
+    GROUP BY pr.ID_Pracownika, pr.Imie, pr.Nazwisko, pr.Stanowisko
+    HAVING COUNT(r.ID_Rezerwacji) >= min_rezerwacji
+    ORDER BY COALESCE(SUM(r.Cena_Calkowita), 0) DESC;
+END;
+$$ LANGUAGE plpgsql;
+
+
+---------------------------------------------------------------------------------
+-- 6. ALGORYTM: PEŁNA HISTORIA POJAZDU (TIMELINE)
+-- Opis:
+-- Tworzy jedną listę zdarzeń dla auta (wypożyczenia + serwisy).
+-- Logika:
+-- 1. Pobieramy dane z tabeli Rezerwacje (typ 'Wypożyczenie').
+-- 2. Używamy operatora UNION ALL, aby dokleić dane z tabeli Serwisy (typ 'Serwis').
+-- 3. Obie części zapytania muszą mieć tyle samo kolumn o tych samych typach.
+-- 4. Sortujemy wszystko po dacie malejąco, tworząc chronologiczną historię.
+---------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION HistoriaPojazdu(p_id_pojazdu INT)
+RETURNS TABLE (
+    Typ_Zdarzenia TEXT,
+    Data DATE,
+    Opis_Szczegoly TEXT,
+    Koszt_Lub_Cena DECIMAL
+) 
+AS $$
+BEGIN
+    RETURN QUERY
+    -- Część 1: Rezerwacje
+    SELECT 
+        'Wypożyczenie'::TEXT,
+        r.Data_Rezerwacji,
+        ('Klient: ' || k.Nazwisko || ', Trasa: ' || r.Miejsce_Odbioru)::TEXT,
+        r.Cena_Calkowita
+    FROM Rezerwacje r
+    JOIN Klienci k ON r.ID_Klienta = k.ID_Klienta
+    WHERE r.ID_Pojazdu = p_id_pojazdu
+    
+    UNION ALL
+    
+    -- Część 2: Serwisy
+    SELECT 
+        'Serwis'::TEXT,
+        s.Data_Serwisu,
+        s.Opis::TEXT,
+        s.Koszt
+    FROM Serwisy s
+    WHERE s.ID_Pojazdu = p_id_pojazdu
+    
+    ORDER BY 2 DESC; -- Sortowanie po drugiej kolumnie (Data)
+END;
+$$ LANGUAGE plpgsql;
+
+
+---------------------------------------------------------------------------------
+-- 7. ALGORYTM: POPULARNOŚĆ USŁUG DODATKOWYCH
+-- Opis:
+-- Analizuje, co klienci dokupują najczęściej (np. GPS, fotelik).
+-- Logika:
+-- 1. Pobieramy wszystkie zdefiniowane usługi.
+-- 2. Łączymy z tabelą łączącą (Rezerwacje_Uslugi) przez LEFT JOIN.
+-- 3. Liczymy wystąpienia (COUNT) i sumujemy ceny (SUM).
+-- 4. Usługi, których nikt nie kupił, będą miały licznik 0.
+---------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION PopularnoscUslug()
+RETURNS TABLE (
+    Nazwa_Uslugi VARCHAR,
+    Ile_Razy_Wybrano BIGINT,
+    Laczny_Przychod DECIMAL
+) 
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        u.Nazwa_Uslugi,
+        COUNT(ru.ID_Rezerwacji_Uslugi),
+        SUM(u.Cena)
+    FROM Uslugi_Dodatkowe u
+    LEFT JOIN Rezerwacje_Uslugi ru ON u.ID_Uslugi = ru.ID_Uslugi
+    GROUP BY u.ID_Uslugi, u.Nazwa_Uslugi
+    ORDER BY COUNT(ru.ID_Rezerwacji_Uslugi) DESC;
+END;
+$$ LANGUAGE plpgsql;
