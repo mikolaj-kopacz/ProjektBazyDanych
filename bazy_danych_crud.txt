@@ -1,19 +1,17 @@
-
-1. Tabela: Klienci
-SQL
-
--- CREATE (Procedura)
 CREATE OR REPLACE PROCEDURE sp_dodaj_klienta(
     p_imie VARCHAR, p_nazwisko VARCHAR, p_pesel CHAR, 
     p_nr_prawa_jazdy VARCHAR, p_telefon VARCHAR, p_email VARCHAR, p_adres VARCHAR
 ) LANGUAGE plpgsql AS $$
 BEGIN
+    IF p_imie IS NULL OR p_nazwisko IS NULL OR p_pesel IS NULL THEN
+        RAISE EXCEPTION 'Błąd: Imie, Nazwisko i PESEL są wymagane!';
+    END IF;
+
     INSERT INTO Klienci (Imie, Nazwisko, PESEL, Numer_Prawa_Jazdy, Telefon, Email, Adres)
     VALUES (p_imie, p_nazwisko, p_pesel, p_nr_prawa_jazdy, p_telefon, p_email, p_adres);
 END;
 $$;
 
--- READ (Funkcja - pobiera jednego po ID lub wszystkich gdy ID jest NULL)
 CREATE OR REPLACE FUNCTION fn_pobierz_klientow(p_id INT DEFAULT NULL)
 RETURNS TABLE (ID_Klienta INT, Imie VARCHAR, Nazwisko VARCHAR, PESEL CHAR, Nr_Prawa_Jazdy VARCHAR, Telefon VARCHAR, Email VARCHAR, Adres VARCHAR) 
 LANGUAGE plpgsql AS $$
@@ -25,7 +23,6 @@ BEGIN
 END;
 $$;
 
--- UPDATE (Procedura)
 CREATE OR REPLACE PROCEDURE sp_aktualizuj_klienta(
     p_id INT, p_imie VARCHAR, p_nazwisko VARCHAR, p_pesel CHAR, 
     p_nr_prawa_jazdy VARCHAR, p_telefon VARCHAR, p_email VARCHAR, p_adres VARCHAR
@@ -40,30 +37,32 @@ BEGIN
         Email = COALESCE(p_email, Email),
         Adres = COALESCE(p_adres, Adres)
     WHERE ID_Klienta = p_id;
+    
+    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono klienta o ID %', p_id; END IF;
 END;
 $$;
 
--- DELETE (Procedura)
 CREATE OR REPLACE PROCEDURE sp_usun_klienta(p_id INT) 
 LANGUAGE plpgsql AS $$
 BEGIN
     DELETE FROM Klienci WHERE ID_Klienta = p_id;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono klienta o ID %', p_id; END IF;
 END;
 $$;
-2. Tabela: Pracownicy
-SQL
 
--- CREATE
 CREATE OR REPLACE PROCEDURE sp_dodaj_pracownika(
     p_imie VARCHAR, p_nazwisko VARCHAR, p_stanowisko VARCHAR
 ) LANGUAGE plpgsql AS $$
 BEGIN
+    IF p_imie IS NULL OR p_nazwisko IS NULL THEN
+        RAISE EXCEPTION 'Błąd: Imie i Nazwisko pracownika są wymagane!';
+    END IF;
+
     INSERT INTO Pracownicy (Imie, Nazwisko, Stanowisko)
     VALUES (p_imie, p_nazwisko, p_stanowisko);
 END;
 $$;
 
--- READ
 CREATE OR REPLACE FUNCTION fn_pobierz_pracownikow(p_id INT DEFAULT NULL)
 RETURNS TABLE (ID_Pracownika INT, Imie VARCHAR, Nazwisko VARCHAR, Stanowisko VARCHAR) 
 LANGUAGE plpgsql AS $$
@@ -75,7 +74,6 @@ BEGIN
 END;
 $$;
 
--- UPDATE
 CREATE OR REPLACE PROCEDURE sp_aktualizuj_pracownika(
     p_id INT, p_imie VARCHAR, p_nazwisko VARCHAR, p_stanowisko VARCHAR
 ) LANGUAGE plpgsql AS $$
@@ -85,30 +83,32 @@ BEGIN
         Nazwisko = COALESCE(p_nazwisko, Nazwisko),
         Stanowisko = COALESCE(p_stanowisko, Stanowisko)
     WHERE ID_Pracownika = p_id;
+    
+    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono pracownika o ID %', p_id; END IF;
 END;
 $$;
 
--- DELETE
 CREATE OR REPLACE PROCEDURE sp_usun_pracownika(p_id INT) 
 LANGUAGE plpgsql AS $$
 BEGIN
     DELETE FROM Pracownicy WHERE ID_Pracownika = p_id;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono pracownika o ID %', p_id; END IF;
 END;
 $$;
-3. Tabela: Klasy_Pojazdow
-SQL
 
--- CREATE
 CREATE OR REPLACE PROCEDURE sp_dodaj_klase(
     p_nazwa VARCHAR, p_cena DECIMAL
 ) LANGUAGE plpgsql AS $$
 BEGIN
+    IF p_nazwa IS NULL OR p_cena IS NULL THEN
+        RAISE EXCEPTION 'Błąd: Nazwa klasy i Cena są wymagane!';
+    END IF;
+
     INSERT INTO Klasy_Pojazdow (Nazwa_Klasy, Cena_Za_Dobe)
     VALUES (p_nazwa, p_cena);
 END;
 $$;
 
--- READ
 CREATE OR REPLACE FUNCTION fn_pobierz_klasy(p_id INT DEFAULT NULL)
 RETURNS SETOF Klasy_Pojazdow LANGUAGE plpgsql AS $$
 BEGIN
@@ -116,7 +116,6 @@ BEGIN
 END;
 $$;
 
--- UPDATE
 CREATE OR REPLACE PROCEDURE sp_aktualizuj_klase(
     p_id INT, p_nazwa VARCHAR, p_cena DECIMAL
 ) LANGUAGE plpgsql AS $$
@@ -125,31 +124,33 @@ BEGIN
     SET Nazwa_Klasy = COALESCE(p_nazwa, Nazwa_Klasy),
         Cena_Za_Dobe = COALESCE(p_cena, Cena_Za_Dobe)
     WHERE ID_Klasy = p_id;
+    
+    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono klasy o ID %', p_id; END IF;
 END;
 $$;
 
--- DELETE
 CREATE OR REPLACE PROCEDURE sp_usun_klase(p_id INT) 
 LANGUAGE plpgsql AS $$
 BEGIN
     DELETE FROM Klasy_Pojazdow WHERE ID_Klasy = p_id;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono klasy o ID %', p_id; END IF;
 END;
 $$;
-4. Tabela: Pojazdy
-SQL
 
--- CREATE
 CREATE OR REPLACE PROCEDURE sp_dodaj_pojazd(
     p_id_klasy INT, p_marka VARCHAR, p_model VARCHAR, p_rok INT, 
     p_nr_rej VARCHAR, p_przebieg INT, p_stan VARCHAR, p_status status_pojazdu
 ) LANGUAGE plpgsql AS $$
 BEGIN
+    IF p_id_klasy IS NULL OR p_marka IS NULL OR p_model IS NULL OR p_nr_rej IS NULL THEN
+        RAISE EXCEPTION 'Błąd: Klasa, Marka, Model i Rejestracja są wymagane!';
+    END IF;
+
     INSERT INTO Pojazdy (ID_Klasy, Marka, Model, Rok_Produkcji, Numer_Rejestracyjny, Przebieg, Stan_Techniczny, Status_Dostepnosci)
     VALUES (p_id_klasy, p_marka, p_model, p_rok, p_nr_rej, p_przebieg, p_stan, p_status);
 END;
 $$;
 
--- READ
 CREATE OR REPLACE FUNCTION fn_pobierz_pojazdy(p_id INT DEFAULT NULL)
 RETURNS SETOF Pojazdy LANGUAGE plpgsql AS $$
 BEGIN
@@ -157,7 +158,6 @@ BEGIN
 END;
 $$;
 
--- UPDATE
 CREATE OR REPLACE PROCEDURE sp_aktualizuj_pojazd(
     p_id INT, p_id_klasy INT, p_marka VARCHAR, p_model VARCHAR, p_rok INT, 
     p_nr_rej VARCHAR, p_przebieg INT, p_stan VARCHAR, p_status status_pojazdu
@@ -173,32 +173,38 @@ BEGIN
         Stan_Techniczny = COALESCE(p_stan, Stan_Techniczny),
         Status_Dostepnosci = COALESCE(p_status, Status_Dostepnosci)
     WHERE ID_Pojazdu = p_id;
+    
+    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono pojazdu o ID %', p_id; END IF;
 END;
 $$;
 
--- DELETE
 CREATE OR REPLACE PROCEDURE sp_usun_pojazd(p_id INT) 
 LANGUAGE plpgsql AS $$
 BEGIN
     DELETE FROM Pojazdy WHERE ID_Pojazdu = p_id;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono pojazdu o ID %', p_id; END IF;
 END;
 $$;
-5. Tabela: Rezerwacje
-SQL
 
--- CREATE
 CREATE OR REPLACE PROCEDURE sp_dodaj_rezerwacje(
     p_id_klienta INT, p_id_pojazdu INT, p_id_pracownika INT, 
     p_data_rez DATE, p_data_odb DATE, p_data_zwr DATE, 
     p_miejsce VARCHAR, p_cena DECIMAL, p_status status_rezerwacji
 ) LANGUAGE plpgsql AS $$
 BEGIN
+    IF p_id_klienta IS NULL OR p_id_pojazdu IS NULL OR p_data_odb IS NULL OR p_data_zwr IS NULL THEN
+        RAISE EXCEPTION 'Błąd: Klient, Pojazd i Daty (odbioru/zwrotu) są wymagane!';
+    END IF;
+    
+    IF p_data_zwr < p_data_odb THEN
+        RAISE EXCEPTION 'Błąd: Data zwrotu nie może być wcześniejsza niż data odbioru!';
+    END IF;
+
     INSERT INTO Rezerwacje (ID_Klienta, ID_Pojazdu, ID_Pracownika, Data_Rezerwacji, Data_Odbioru, Data_Zwrotu, Miejsce_Odbioru, Cena_Calkowita, Status_Rezerwacji)
     VALUES (p_id_klienta, p_id_pojazdu, p_id_pracownika, p_data_rez, p_data_odb, p_data_zwr, p_miejsce, p_cena, p_status);
 END;
 $$;
 
--- READ
 CREATE OR REPLACE FUNCTION fn_pobierz_rezerwacje(p_id INT DEFAULT NULL)
 RETURNS SETOF Rezerwacje LANGUAGE plpgsql AS $$
 BEGIN
@@ -206,7 +212,6 @@ BEGIN
 END;
 $$;
 
--- UPDATE
 CREATE OR REPLACE PROCEDURE sp_aktualizuj_rezerwacje(
     p_id INT, p_id_klienta INT, p_id_pojazdu INT, p_id_pracownika INT,
     p_data_rez DATE, p_data_odb DATE, p_data_zwr DATE, 
@@ -224,29 +229,31 @@ BEGIN
         Cena_Calkowita = COALESCE(p_cena, Cena_Calkowita),
         Status_Rezerwacji = COALESCE(p_status, Status_Rezerwacji)
     WHERE ID_Rezerwacji = p_id;
+    
+    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono rezerwacji o ID %', p_id; END IF;
 END;
 $$;
 
--- DELETE
 CREATE OR REPLACE PROCEDURE sp_usun_rezerwacje(p_id INT) 
 LANGUAGE plpgsql AS $$
 BEGIN
     DELETE FROM Rezerwacje WHERE ID_Rezerwacji = p_id;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono rezerwacji o ID %', p_id; END IF;
 END;
 $$;
-6. Tabela: Uslugi_Dodatkowe
-SQL
 
--- CREATE
 CREATE OR REPLACE PROCEDURE sp_dodaj_usluge(
     p_nazwa VARCHAR, p_cena DECIMAL
 ) LANGUAGE plpgsql AS $$
 BEGIN
+    IF p_nazwa IS NULL OR p_cena IS NULL THEN
+        RAISE EXCEPTION 'Błąd: Nazwa usługi i Cena są wymagane!';
+    END IF;
+
     INSERT INTO Uslugi_Dodatkowe (Nazwa_Uslugi, Cena) VALUES (p_nazwa, p_cena);
 END;
 $$;
 
--- READ
 CREATE OR REPLACE FUNCTION fn_pobierz_uslugi(p_id INT DEFAULT NULL)
 RETURNS SETOF Uslugi_Dodatkowe LANGUAGE plpgsql AS $$
 BEGIN
@@ -254,7 +261,6 @@ BEGIN
 END;
 $$;
 
--- UPDATE
 CREATE OR REPLACE PROCEDURE sp_aktualizuj_usluge(
     p_id INT, p_nazwa VARCHAR, p_cena DECIMAL
 ) LANGUAGE plpgsql AS $$
@@ -263,29 +269,31 @@ BEGIN
     SET Nazwa_Uslugi = COALESCE(p_nazwa, Nazwa_Uslugi),
         Cena = COALESCE(p_cena, Cena)
     WHERE ID_Uslugi = p_id;
+    
+    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono usługi o ID %', p_id; END IF;
 END;
 $$;
 
--- DELETE
 CREATE OR REPLACE PROCEDURE sp_usun_usluge(p_id INT) 
 LANGUAGE plpgsql AS $$
 BEGIN
     DELETE FROM Uslugi_Dodatkowe WHERE ID_Uslugi = p_id;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono usługi o ID %', p_id; END IF;
 END;
 $$;
-7. Tabela: Rezerwacje_Uslugi (Tabela łącząca)
-SQL
 
--- CREATE
 CREATE OR REPLACE PROCEDURE sp_dodaj_usluge_do_rezerwacji(
     p_id_rez INT, p_id_uslugi INT
 ) LANGUAGE plpgsql AS $$
 BEGIN
+    IF p_id_rez IS NULL OR p_id_uslugi IS NULL THEN
+        RAISE EXCEPTION 'Błąd: ID Rezerwacji i ID Usługi są wymagane!';
+    END IF;
+
     INSERT INTO Rezerwacje_Uslugi (ID_Rezerwacji, ID_Uslugi) VALUES (p_id_rez, p_id_uslugi);
 END;
 $$;
 
--- READ (Zwraca szczegóły usług dla danej rezerwacji)
 CREATE OR REPLACE FUNCTION fn_pobierz_uslugi_rezerwacji(p_id_rez INT)
 RETURNS TABLE (ID_Przypisania INT, RezerwacjaID INT, Nazwa_Uslugi VARCHAR, Cena DECIMAL) 
 LANGUAGE plpgsql AS $$
@@ -298,7 +306,6 @@ BEGIN
 END;
 $$;
 
--- UPDATE (Rzadko używane dla tabel łączących, ale możliwe - zmiana usługi)
 CREATE OR REPLACE PROCEDURE sp_aktualizuj_usluge_rezerwacji(
     p_id_rez_uslugi INT, p_nowe_id_uslugi INT
 ) LANGUAGE plpgsql AS $$
@@ -306,31 +313,33 @@ BEGIN
     UPDATE Rezerwacje_Uslugi
     SET ID_Uslugi = p_nowe_id_uslugi
     WHERE ID_Rezerwacji_Uslugi = p_id_rez_uslugi;
+    
+    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono przypisania usługi o ID %', p_id_rez_uslugi; END IF;
 END;
 $$;
 
--- DELETE
 CREATE OR REPLACE PROCEDURE sp_usun_usluge_z_rezerwacji(p_id_rez_uslugi INT) 
 LANGUAGE plpgsql AS $$
 BEGIN
     DELETE FROM Rezerwacje_Uslugi WHERE ID_Rezerwacji_Uslugi = p_id_rez_uslugi;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono przypisania usługi o ID %', p_id_rez_uslugi; END IF;
 END;
 $$;
-8. Tabela: Platnosci
-SQL
 
--- CREATE
 CREATE OR REPLACE PROCEDURE sp_dodaj_platnosc(
     p_id_rez INT, p_kwota DECIMAL, p_data DATE, 
     p_forma forma_platnosci, p_status status_platnosci, p_faktura VARCHAR
 ) LANGUAGE plpgsql AS $$
 BEGIN
+    IF p_id_rez IS NULL OR p_kwota IS NULL THEN
+        RAISE EXCEPTION 'Błąd: ID Rezerwacji i Kwota są wymagane!';
+    END IF;
+
     INSERT INTO Platnosci (ID_Rezerwacji, Kwota_Calkowita, Data_Platnosci, Forma_Platnosci, Status_Platnosci, Numer_Faktury)
     VALUES (p_id_rez, p_kwota, p_data, p_forma, p_status, p_faktura);
 END;
-$$;
+@@;
 
--- READ
 CREATE OR REPLACE FUNCTION fn_pobierz_platnosci(p_id INT DEFAULT NULL)
 RETURNS SETOF Platnosci LANGUAGE plpgsql AS $$
 BEGIN
@@ -338,7 +347,6 @@ BEGIN
 END;
 $$;
 
--- UPDATE
 CREATE OR REPLACE PROCEDURE sp_aktualizuj_platnosc(
     p_id INT, p_kwota DECIMAL, p_data DATE, 
     p_forma forma_platnosci, p_status status_platnosci, p_faktura VARCHAR
@@ -351,24 +359,27 @@ BEGIN
         Status_Platnosci = COALESCE(p_status, Status_Platnosci),
         Numer_Faktury = COALESCE(p_faktura, Numer_Faktury)
     WHERE ID_Platnosci = p_id;
+    
+    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono płatności o ID %', p_id; END IF;
 END;
 $$;
 
--- DELETE
 CREATE OR REPLACE PROCEDURE sp_usun_platnosc(p_id INT) 
 LANGUAGE plpgsql AS $$
 BEGIN
     DELETE FROM Platnosci WHERE ID_Platnosci = p_id;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono płatności o ID %', p_id; END IF;
 END;
 $$;
-9. Tabela: Serwisy
-SQL
 
--- CREATE
 CREATE OR REPLACE PROCEDURE sp_dodaj_serwis(
     p_id_pojazdu INT, p_data DATE, p_opis VARCHAR, p_koszt DECIMAL, p_przebieg INT
 ) LANGUAGE plpgsql AS $$
 BEGIN
+    IF p_id_pojazdu IS NULL OR p_data IS NULL THEN
+        RAISE EXCEPTION 'Błąd: ID Pojazdu i Data serwisu są wymagane!';
+    END IF;
+
     INSERT INTO Serwisy (ID_Pojazdu, Data_Serwisu, Opis, Koszt, Przebieg_W_Chwili_Serwisu)
     VALUES (p_id_pojazdu, p_data, p_opis, p_koszt, p_przebieg);
 END;
