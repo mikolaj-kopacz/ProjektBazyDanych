@@ -6,6 +6,7 @@ import time
 
 st.set_page_config(page_title="System Wypożyczalni", layout="wide", initial_sidebar_state="expanded")
 
+# --- CSS (Wygląd + Ramka Logowania) ---
 st.markdown("""
     <style>
     .main .block-container { padding-top: 2rem; padding-bottom: 2rem; }
@@ -40,6 +41,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+# --- FUNKCJE POMOCNICZE ---
 def get_client_id_by_pesel(pesel):
     res = run_query("SELECT id_klienta FROM Klienci WHERE pesel = %s", (pesel,))
     if not res.empty: return res.iloc[0]['id_klienta']
@@ -54,6 +56,7 @@ def add_new_client_fast(imie, nazwisko, pesel, nr_prawa, telefon, email, adres):
     return True, "Dodano klienta.", new_id
 
 
+# ZARZĄDZANIE PRACOWNIKAMI
 def add_employee(imie, nazwisko, stanowisko, login, haslo):
     sql = "CALL sp_dodaj_pracownika(%s, %s, %s, %s, %s);"
     return run_command(sql, (imie, nazwisko, stanowisko, login, haslo))
@@ -64,11 +67,14 @@ def delete_employee(emp_id):
     return run_command(sql, (emp_id,))
 
 
+# --- LOGIKA SESJI (PAMIĘĆ) ---
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 if 'user_info' not in st.session_state: st.session_state['user_info'] = {}
+
 if 'reservation_step' not in st.session_state: st.session_state['reservation_step'] = None
 if 'selected_car_data' not in st.session_state: st.session_state['selected_car_data'] = None
 
+# ================= EKRAN LOGOWANIA =================
 if not st.session_state['logged_in']:
     c1, c2, c3 = st.columns([1, 1, 1])
     with c2:
@@ -76,6 +82,7 @@ if not st.session_state['logged_in']:
         with st.form("login_form"):
             user = st.text_input("Login")
             pw = st.text_input("Hasło", type="password")
+
             if st.form_submit_button("Zaloguj się", type="primary", use_container_width=True):
                 user_data = check_login(user, pw)
                 if user_data:
@@ -85,8 +92,9 @@ if not st.session_state['logged_in']:
                     st.rerun()
                 else:
                     st.error("Błędny login lub hasło.")
-    st.stop()
+    st.stop()  # Zatrzymaj renderowanie reszty aplikacji, jeśli nie zalogowano
 
+# ================= GŁÓWNA APLIKACJA (TYLKO DLA ZALOGOWANYCH) =================
 user_id = st.session_state['user_info']['id_pracownika']
 user_name = st.session_state['user_info']['imie']
 user_role = st.session_state['user_info']['stanowisko']
@@ -95,6 +103,7 @@ with st.sidebar:
     st.title("🚗 Rent-A-Car OS")
     st.success(f"👤 {user_name} ({user_role})")
 
+    # DYNAMICZNE MENU ZALEŻNE OD ROLI
     menu_options = ["🏠 Pulpit", "🚗 Flota & Rezerwacje", "👥 Klienci", "💰 Finanse"]
     if user_role == 'Menadżer':
         menu_options.append("💼 Pracownicy (Admin)")
@@ -103,8 +112,13 @@ with st.sidebar:
     st.markdown("---")
 
     c_logout, c_reset = st.columns(2)
-    if c_logout.button("Wyloguj"): st.session_state.clear(); st.rerun()
-    if c_reset.button("Reset"): st.session_state['reservation_step'] = None; st.rerun()
+    if c_logout.button("Wyloguj"):
+        st.session_state.clear()
+        st.rerun()
+    if c_reset.button("Reset"):
+        # Resetujemy tylko widok, nie wylogowujemy
+        st.session_state['reservation_step'] = None
+        st.rerun()
 
 if menu == "🏠 Pulpit":
     st.title("🏠 Pulpit Menadżera")
@@ -113,7 +127,7 @@ if menu == "🏠 Pulpit":
         count_cars = run_query("SELECT COUNT(*) as c FROM Pojazdy").iloc[0]['c']
         count_clients = run_query("SELECT COUNT(*) as c FROM Klienci").iloc[0]['c']
         count_reservations = \
-            run_query("SELECT COUNT(*) as c FROM Rezerwacje WHERE Status_Rezerwacji = 'Potwierdzona'").iloc[0]['c']
+        run_query("SELECT COUNT(*) as c FROM Rezerwacje WHERE Status_Rezerwacji = 'Potwierdzona'").iloc[0]['c']
     except:
         count_cars, count_clients, count_reservations = 0, 0, 0
 
@@ -133,14 +147,12 @@ if menu == "🏠 Pulpit":
 
 elif menu == "🚗 Flota & Rezerwacje":
     st.title("🚗 Flota i Rezerwacje")
-
     with st.container(border=True):
         st.subheader("1. Znajdź samochód")
         c1, c2, c3 = st.columns([2, 2, 1])
         d_od = c1.date_input("Data Odbioru", datetime.date.today())
         d_do = c2.date_input("Data Zwrotu", datetime.date.today() + datetime.timedelta(days=3))
         st.session_state['dates'] = (d_od, d_do)
-
         if c3.button("🔍 Szukaj Wolnych Aut", type="primary", use_container_width=True):
             st.session_state['reservation_step'] = None
             st.session_state['search_performed'] = True
@@ -177,7 +189,8 @@ elif menu == "🚗 Flota & Rezerwacje":
         price_total = days * car['cena']
 
         st.markdown("---")
-        st.markdown(f"""<div class="reservation-box">
+        st.markdown(f"""
+        <div class="reservation-box">
             <h3>📝 Finalizacja Rezerwacji: {car['marka']} {car['model']}</h3>
             <p>Termin: <b>{d_start}</b> do <b>{d_end}</b> ({days} dni)</p>
             <p style="font-size: 20px">Do zapłaty: <b>{price_total:.2f} PLN</b></p>
@@ -207,18 +220,19 @@ elif menu == "🚗 Flota & Rezerwacje":
                 nt = c1.text_input("Telefon");
                 ne = c2.text_input("Email");
                 na = st.text_area("Adres")
-                miejsce = st.text_input("Miejsce odbioru", "Siedziba Główna")
+
+            # --- POPRAWKA: Definicja zmiennej poza blokiem if/else ---
+            miejsce = st.text_input("Miejsce odbioru", "Siedziba Główna")
 
             if st.form_submit_button("✅ Potwierdź i Zarezerwuj", type="primary"):
                 if method == "➕ Dodaj nowego klienta":
-                    if not (ni and nn and np):
-                        st.error("Brak danych osobowych!");
-                        st.stop()
+                    if not (ni and nn and np): st.error("Brak danych osobowych!"); st.stop()
                     ok, msg, new_id = add_new_client_fast(ni, nn, np, npr, nt, ne, na)
                     if not ok: st.error(msg); st.stop()
                     selected_client_id = new_id
 
                 cur_date = datetime.date.today()
+                # używamy 'user_id' (zalogowany pracownik)
                 res_ok, res_msg = run_command("CALL sp_dodaj_rezerwacje(%s, %s, %s, %s, %s, %s, %s, %s, %s);",
                                               (selected_client_id, int(car['id_pojazdu']), user_id, cur_date, d_start,
                                                d_end, miejsce, float(price_total), 'Potwierdzona'))
@@ -242,16 +256,14 @@ elif menu == "👥 Klienci":
     st.title("👥 Baza Klientów")
     search = st.text_input("🔍 Szukaj klienta:", placeholder="Nazwisko...")
     df = run_query("SELECT * FROM fn_pobierz_klientow()")
-    if search:
-        df = df[df.apply(lambda x: search.lower() in str(x).lower(), axis=1)]
+    if search: df = df[df.apply(lambda x: search.lower() in str(x).lower(), axis=1)]
     st.dataframe(df, use_container_width=True)
 
     with st.expander("📜 Historia (JSON)"):
         cid = st.number_input("ID Klienta", 1)
         if st.button("Pobierz"):
             res = run_query("SELECT PobierzHistorieKlientaJSON(%s) as j", (cid,))
-            if not res.empty and res.iloc[0]['j']:
-                st.json(res.iloc[0]['j'])
+            if not res.empty and res.iloc[0]['j']: st.json(res.iloc[0]['j'])
 
 elif menu == "💰 Finanse":
     st.title("💰 Raporty Finansowe")
@@ -266,6 +278,7 @@ elif menu == "💰 Finanse":
 
 elif menu == "💼 Pracownicy (Admin)":
     st.title("💼 Zarządzanie Personelem")
+
     tab1, tab2 = st.tabs(["📊 Efektywność (Raport)", "🛠️ Zarządzaj Kontami"])
 
     with tab1:
@@ -280,23 +293,27 @@ elif menu == "💼 Pracownicy (Admin)":
         staff = run_query(
             "SELECT id_pracownika, imie, nazwisko, stanowisko, login FROM Pracownicy ORDER BY id_pracownika")
 
+        # Wyświetlamy jako ładną tabelę z przyciskiem usuwania
         for i, row in staff.iterrows():
-            c1, c2, c3, c4 = st.columns([1, 2, 2, 1])
-            c1.write(row['id_pracownika'])
-            c2.write(f"{row['imie']} {row['nazwisko']}")
+            c1, c2, c3, c4, c5 = st.columns([1, 2, 2, 2, 1])
+            c1.write(f"#{row['id_pracownika']}")
+            c2.write(f"**{row['imie']} {row['nazwisko']}**")
             c3.write(row['stanowisko'])
-            if c4.button("Usuń", key=f"del_{row['id_pracownika']}"):
-                ok, msg = delete_employee(row['id_pracownika'])
-                if ok:
-                    st.success("Usunięto");
-                    time.sleep(1);
-                    st.rerun()
+            c4.write(f"Login: `{row['login']}`")
+            if c5.button("🗑️", key=f"del_emp_{row['id_pracownika']}"):
+                if row['login'] == 'admin':
+                    st.error("Nie możesz usunąć głównego Administratora!")
+                elif row['id_pracownika'] == user_id:
+                    st.error("Nie możesz usunąć samego siebie!")
                 else:
-                    st.error(msg)
+                    delete_employee(row['id_pracownika'])
+                    st.success("Pracownik usunięty.")
+                    time.sleep(1)
+                    st.rerun()
 
         st.markdown("---")
-        st.subheader("Dodaj Pracownika")
-        with st.form("new_emp"):
+        st.subheader("➕ Dodaj Nowego Pracownika")
+        with st.form("add_employee_form"):
             col1, col2 = st.columns(2)
             e_imie = col1.text_input("Imię")
             e_nazwisko = col2.text_input("Nazwisko")
@@ -310,10 +327,10 @@ elif menu == "💼 Pracownicy (Admin)":
                     try:
                         ok, msg = add_employee(e_imie, e_nazwisko, e_stanowisko, e_login, e_haslo)
                         if ok:
-                            st.success("Dodano pracownika!")
-                            time.sleep(1)
-                            st.rerun()
+                            st.success("Konto utworzone!"); time.sleep(1); st.rerun()
                         else:
                             st.error(f"Błąd: {msg}")
                     except Exception as e:
-                        st.error(f"Błąd: {e}")
+                        st.error(f"Błąd (może login zajęty?): {e}")
+                else:
+                    st.warning("Uzupełnij wszystkie pola.")
