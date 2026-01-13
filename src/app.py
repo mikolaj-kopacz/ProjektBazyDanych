@@ -92,9 +92,9 @@ if not st.session_state['logged_in']:
                     st.rerun()
                 else:
                     st.error("Błędny login lub hasło.")
-    st.stop()  # Zatrzymaj renderowanie reszty aplikacji, jeśli nie zalogowano
+    st.stop()
 
-# ================= GŁÓWNA APLIKACJA (TYLKO DLA ZALOGOWANYCH) =================
+# ================= GŁÓWNA APLIKACJA  =================
 user_id = st.session_state['user_info']['id_pracownika']
 user_name = st.session_state['user_info']['imie']
 user_role = st.session_state['user_info']['stanowisko']
@@ -103,7 +103,6 @@ with st.sidebar:
     st.title("🚗 Rent-A-Car OS")
     st.success(f"👤 {user_name} ({user_role})")
 
-    # DYNAMICZNE MENU ZALEŻNE OD ROLI
     menu_options = ["🏠 Pulpit", "🚗 Flota & Rezerwacje", "👥 Klienci", "💰 Finanse"]
     if user_role == 'Menadżer':
         menu_options.append("💼 Pracownicy (Admin)")
@@ -116,7 +115,7 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
     if c_reset.button("Reset"):
-        # Resetujemy tylko widok, nie wylogowujemy
+
         st.session_state['reservation_step'] = None
         st.rerun()
 
@@ -221,7 +220,6 @@ elif menu == "🚗 Flota & Rezerwacje":
                 ne = c2.text_input("Email");
                 na = st.text_area("Adres")
 
-            # --- POPRAWKA: Definicja zmiennej poza blokiem if/else ---
             miejsce = st.text_input("Miejsce odbioru", "Siedziba Główna")
 
             if st.form_submit_button("✅ Potwierdź i Zarezerwuj", type="primary"):
@@ -232,7 +230,6 @@ elif menu == "🚗 Flota & Rezerwacje":
                     selected_client_id = new_id
 
                 cur_date = datetime.date.today()
-                # używamy 'user_id' (zalogowany pracownik)
                 res_ok, res_msg = run_command("CALL sp_dodaj_rezerwacje(%s, %s, %s, %s, %s, %s, %s, %s, %s);",
                                               (selected_client_id, int(car['id_pojazdu']), user_id, cur_date, d_start,
                                                d_end, miejsce, float(price_total), 'Potwierdzona'))
@@ -293,7 +290,7 @@ elif menu == "💼 Pracownicy (Admin)":
         staff = run_query(
             "SELECT id_pracownika, imie, nazwisko, stanowisko, login FROM Pracownicy ORDER BY id_pracownika")
 
-        # Wyświetlamy jako ładną tabelę z przyciskiem usuwania
+
         for i, row in staff.iterrows():
             c1, c2, c3, c4, c5 = st.columns([1, 2, 2, 2, 1])
             c1.write(f"#{row['id_pracownika']}")

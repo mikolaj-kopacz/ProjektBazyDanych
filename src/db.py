@@ -3,9 +3,10 @@ import pandas as pd
 import streamlit as st
 
 def get_db_config():
-    if "postgres" in st.secrets:
+    try:
         return st.secrets["postgres"]
-    else:
+    except Exception:
+
         return {
             "dbname": "wypozyczalnia_db",
             "user": "postgres",
