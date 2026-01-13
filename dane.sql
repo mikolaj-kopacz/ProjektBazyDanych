@@ -20,7 +20,7 @@ INSERT INTO Pracownicy (Imie, Nazwisko, Stanowisko, Login, Haslo) VALUES
 ('Piotr', 'Wiśniewski', 'Serwisant', 'piotr', 'piotr');
 
 ---------------------------------------------------------------------------------
--- 2. FLOTA (20 SAMOCHODÓW)
+-- 2. FLOTA
 ---------------------------------------------------------------------------------
 INSERT INTO Pojazdy (ID_Klasy, Marka, Model, Rok_Produkcji, Numer_Rejestracyjny, Przebieg, Stan_Techniczny, Status_Dostepnosci) VALUES
 (1, 'Toyota', 'Yaris', 2022, 'WA 10001', 45000, 'Bardzo Dobry', 'Dostępny'),
@@ -45,7 +45,7 @@ INSERT INTO Pojazdy (ID_Klasy, Marka, Model, Rok_Produkcji, Numer_Rejestracyjny,
 (6, 'Dodge', 'Challenger', 2020, 'D0 HEMI', 55000, 'Dobry', 'Dostępny');
 
 ---------------------------------------------------------------------------------
--- 3. KLIENCI (20 OSÓB)
+-- 3. KLIENCI
 ---------------------------------------------------------------------------------
 INSERT INTO Klienci (Imie, Nazwisko, PESEL, Numer_Prawa_Jazdy, Telefon, Email, Adres) VALUES
 ('Jan', 'Kowalski', '80010112345', 'PJ001', '500100100', 'jan@mail.com', 'Warszawa'),
@@ -70,22 +70,22 @@ INSERT INTO Klienci (Imie, Nazwisko, PESEL, Numer_Prawa_Jazdy, Telefon, Email, A
 ('Grzegorz', 'Nowicki', '84080889898', 'PJ020', '617617617', 'grzes@mail.com', 'Olsztyn');
 
 ---------------------------------------------------------------------------------
--- 4. HISTORIA REZERWACJI (2023 - 2026)
+-- 4. HISTORIA REZERWACJI
 ---------------------------------------------------------------------------------
 
--- === ROK 2023 (Historia) ===
+-- === ROK 2023 ===
 INSERT INTO Rezerwacje (ID_Klienta, ID_Pojazdu, ID_Pracownika, Data_Rezerwacji, Data_Odbioru, Data_Zwrotu, Miejsce_Odbioru, Cena_Calkowita, Status_Rezerwacji) VALUES
 (1, 1, 1, '2023-01-05', '2023-01-10', '2023-01-15', 'Warszawa', 450.00, 'Zakończona'),
 (2, 5, 2, '2023-02-12', '2023-02-15', '2023-02-20', 'Kraków', 700.00, 'Zakończona'),
 (3, 10, 3, '2023-03-01', '2023-03-05', '2023-03-10', 'Gdańsk', 950.00, 'Zakończona'),
 (4, 2, 2, '2023-03-20', '2023-03-25', '2023-03-28', 'Wrocław', 270.00, 'Zakończona'),
-(5, 14, 1, '2023-06-01', '2023-06-15', '2023-06-25', 'Poznań', 4500.00, 'Zakończona'), -- BMW X5
-(6, 18, 2, '2023-07-05', '2023-07-10', '2023-07-12', 'Sopot', 1200.00, 'Zakończona'), -- Porsche
-(7, 19, 1, '2023-07-15', '2023-07-20', '2023-07-27', 'Gdynia', 4200.00, 'Zakończona'), -- Mustang
-(8, 11, 2, '2023-08-01', '2023-08-05', '2023-08-15', 'Zakopane', 2500.00, 'Zakończona'), -- Sportage
+(5, 14, 1, '2023-06-01', '2023-06-15', '2023-06-25', 'Poznań', 4500.00, 'Zakończona'),
+(6, 18, 2, '2023-07-05', '2023-07-10', '2023-07-12', 'Sopot', 1200.00, 'Zakończona'),
+(7, 19, 1, '2023-07-15', '2023-07-20', '2023-07-27', 'Gdynia', 4200.00, 'Zakończona'),
+(8, 11, 2, '2023-08-01', '2023-08-05', '2023-08-15', 'Zakopane', 2500.00, 'Zakończona'),
 (9, 3, 3, '2023-10-10', '2023-10-15', '2023-10-20', 'Lublin', 450.00, 'Zakończona'),
 (10, 6, 2, '2023-11-05', '2023-11-10', '2023-11-12', 'Katowice', 280.00, 'Zakończona'),
-(11, 15, 1, '2023-12-20', '2023-12-23', '2023-12-27', 'Kraków', 2250.00, 'Zakończona'); -- Mercedes na święta
+(11, 15, 1, '2023-12-20', '2023-12-23', '2023-12-27', 'Kraków', 2250.00, 'Zakończona');
 
 INSERT INTO Platnosci (ID_Rezerwacji, Kwota_Calkowita, Data_Platnosci, Forma_Platnosci, Status_Platnosci) VALUES
 (1, 450.00, '2023-01-15', 'Karta', 'Zrealizowana'),
@@ -100,7 +100,7 @@ INSERT INTO Platnosci (ID_Rezerwacji, Kwota_Calkowita, Data_Platnosci, Forma_Pla
 (10, 280.00, '2023-11-12', 'Karta', 'Zrealizowana'),
 (11, 2250.00, '2023-12-27', 'Przelew', 'Zrealizowana');
 
--- === ROK 2024 (Rekordowy) ===
+-- === ROK 2024 ===
 INSERT INTO Rezerwacje (ID_Klienta, ID_Pojazdu, ID_Pracownika, Data_Rezerwacji, Data_Odbioru, Data_Zwrotu, Miejsce_Odbioru, Cena_Calkowita, Status_Rezerwacji) VALUES
 (12, 14, 2, '2024-01-05', '2024-01-10', '2024-01-20', 'Zakopane', 4500.00, 'Zakończona'),
 (13, 12, 1, '2024-02-14', '2024-02-14', '2024-02-16', 'Warszawa', 500.00, 'Zakończona'),
@@ -158,11 +158,11 @@ INSERT INTO Platnosci (ID_Rezerwacji, Kwota_Calkowita, Data_Platnosci, Forma_Pla
 (34, 2250.00, '2025-11-30', 'Karta', 'Zrealizowana'),
 (35, 950.00, '2025-12-20', 'Gotówka', 'Zrealizowana');
 
--- === STYCZEŃ 2026 (Teraźniejszość i Przyszłość) ===
+-- === STYCZEŃ 2026 ===
 INSERT INTO Rezerwacje (ID_Klienta, ID_Pojazdu, ID_Pracownika, Data_Rezerwacji, Data_Odbioru, Data_Zwrotu, Miejsce_Odbioru, Cena_Calkowita, Status_Rezerwacji) VALUES
 (1, 2, 1, '2026-01-02', '2026-01-03', '2026-01-05', 'Warszawa', 270.00, 'Zakończona'),
-(2, 5, 2, '2026-01-04', '2026-01-06', '2026-01-10', 'Kraków', 560.00, 'Potwierdzona'), -- Trwa
-(3, 12, 3, '2026-01-05', '2026-01-15', '2026-01-20', 'Gdańsk', 1250.00, 'Potwierdzona'), -- Przyszła
+(2, 5, 2, '2026-01-04', '2026-01-06', '2026-01-10', 'Kraków', 560.00, 'Potwierdzona'),
+(3, 12, 3, '2026-01-05', '2026-01-15', '2026-01-20', 'Gdańsk', 1250.00, 'Potwierdzona'),
 (4, 14, 2, '2026-01-01', '2026-01-02', '2026-01-04', 'Wrocław', 900.00, 'Zakończona'),
 (5, 1, 1, '2026-01-08', '2026-01-10', '2026-01-12', 'Poznań', 180.00, 'Potwierdzona');
 
@@ -171,7 +171,7 @@ INSERT INTO Platnosci (ID_Rezerwacji, Kwota_Calkowita, Data_Platnosci, Forma_Pla
 (39, 900.00, '2026-01-04', 'Gotówka', 'Zrealizowana');
 
 ---------------------------------------------------------------------------------
--- 5. SERWISY (DO ALGORYTMU FLOTOWEGO)
+-- 5. SERWISY
 ---------------------------------------------------------------------------------
 INSERT INTO Serwisy (ID_Pojazdu, Data_Serwisu, Opis, Koszt, Przebieg_W_Chwili_Serwisu) VALUES
 (1, '2025-10-01', 'Przegląd olejowy', 400.00, 40000),

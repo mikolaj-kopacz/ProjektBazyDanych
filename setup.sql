@@ -64,7 +64,6 @@ DROP TABLE IF EXISTS Klienci CASCADE;
 DROP TABLE IF EXISTS Pracownicy CASCADE;
 DROP TABLE IF EXISTS Klasy_Pojazdow CASCADE;
 
-
 ---------------------------------------------------------------------------------
 -- 2. TWORZENIE STRUKTURY TABEL
 ---------------------------------------------------------------------------------
@@ -152,9 +151,8 @@ CREATE TABLE Platnosci (
     Numer_Faktury VARCHAR(50)
 );
 
-
 ---------------------------------------------------------------------------------
--- 3. -----CRUDY (Z OBSŁUGĄ BŁĘDÓW RAISE EXCEPTION)-----
+-- 3. CRUDY
 ---------------------------------------------------------------------------------
 
 -- === 1. KLIENCI ===
@@ -177,7 +175,7 @@ BEGIN
 END;
 $$;
 
--- 1B. Pobierz Klientów (POPRAWKA: Adres TEXT, alias k)
+-- 1B. Pobierz Klientów
 CREATE OR REPLACE FUNCTION fn_pobierz_klientow(p_id INT DEFAULT NULL)
 RETURNS TABLE (ID_Klienta INT, Imie VARCHAR, Nazwisko VARCHAR, PESEL VARCHAR, Nr_Prawa_Jazdy VARCHAR, Telefon VARCHAR, Email VARCHAR, Adres TEXT)
 LANGUAGE plpgsql AS $$
@@ -253,7 +251,7 @@ BEGIN
 END;
 $$;
 
--- 2B. Pobierz Pracowników (NAPRAWIONE: alias 'p')
+-- 2B. Pobierz Pracowników
 CREATE OR REPLACE FUNCTION fn_pobierz_pracownikow(p_id INT DEFAULT NULL)
 RETURNS TABLE (ID_Pracownika INT, Imie VARCHAR, Nazwisko VARCHAR, Stanowisko VARCHAR, Login VARCHAR)
 LANGUAGE plpgsql AS $$
@@ -316,7 +314,7 @@ BEGIN
 END;
 $$;
 
--- 3B. Pobierz Klasy (NAPRAWIONE: alias 'k')
+-- 3B. Pobierz Klasy
 CREATE OR REPLACE FUNCTION fn_pobierz_klasy(p_id INT DEFAULT NULL)
 RETURNS SETOF Klasy_Pojazdow LANGUAGE plpgsql AS $$
 BEGIN
@@ -384,7 +382,7 @@ BEGIN
 END;
 $$;
 
--- 4B. Pobierz Pojazdy (NAPRAWIONE: alias 'p')
+-- 4B. Pobierz Pojazdy
 CREATE OR REPLACE FUNCTION fn_pobierz_pojazdy(p_id INT DEFAULT NULL)
 RETURNS SETOF Pojazdy LANGUAGE plpgsql AS $$
 BEGIN
@@ -448,7 +446,6 @@ CREATE OR REPLACE PROCEDURE sp_dodaj_rezerwacje(
     p_miejsce VARCHAR, p_cena DECIMAL, p_status VARCHAR
 ) LANGUAGE plpgsql AS $$
 BEGIN
-    -- Walidacja powiązań
     IF NOT EXISTS (SELECT 1 FROM Klienci WHERE ID_Klienta = p_id_klienta) THEN
         RAISE EXCEPTION 'Błąd: Klient o ID % nie istnieje!', p_id_klienta;
     END IF;
@@ -456,7 +453,6 @@ BEGIN
         RAISE EXCEPTION 'Błąd: Pojazd o ID % nie istnieje!', p_id_pojazdu;
     END IF;
 
-    -- Walidacja dat
     IF p_data_zwr < p_data_odb THEN
         RAISE EXCEPTION 'Błąd: Data zwrotu nie może być wcześniejsza niż data odbioru!';
     END IF;
@@ -466,7 +462,7 @@ BEGIN
 END;
 $$;
 
--- 5B. Pobierz Rezerwacje (NAPRAWIONE: alias 'r')
+-- 5B. Pobierz Rezerwacje
 CREATE OR REPLACE FUNCTION fn_pobierz_rezerwacje(p_id INT DEFAULT NULL)
 RETURNS SETOF Rezerwacje LANGUAGE plpgsql AS $$
 BEGIN
@@ -530,7 +526,7 @@ BEGIN
 END;
 $$;
 
--- 6B. Pobierz Usługi (NAPRAWIONE: alias 'u')
+-- 6B. Pobierz Usługi
 CREATE OR REPLACE FUNCTION fn_pobierz_uslugi(p_id INT DEFAULT NULL)
 RETURNS SETOF Uslugi_Dodatkowe LANGUAGE plpgsql AS $$
 BEGIN
@@ -570,7 +566,7 @@ BEGIN
 END;
 $$;
 
--- === 7. REZERWACJE_USŁUGI (ŁĄCZNIK) ===
+-- === 7. REZERWACJE_USŁUGI ===
 
 -- 7A. Dodaj Usługę do Rezerwacji
 CREATE OR REPLACE PROCEDURE sp_dodaj_usluge_do_rezerwacji(
@@ -591,7 +587,7 @@ BEGIN
 END;
 $$;
 
--- 7B. Pobierz Usługi Rezerwacji (NAPRAWIONE: alias 'ru', 'u')
+-- 7B. Pobierz Usługi Rezerwacji
 CREATE OR REPLACE FUNCTION fn_pobierz_uslugi_rezerwacji(p_id_rez INT)
 RETURNS TABLE (ID_Przypisania INT, RezerwacjaID INT, Nazwa_Uslugi VARCHAR, Cena DECIMAL)
 LANGUAGE plpgsql AS $$
@@ -652,7 +648,7 @@ BEGIN
 END;
 $$;
 
--- 8B. Pobierz Płatności (NAPRAWIONE: alias 'pl')
+-- 8B. Pobierz Płatności
 CREATE OR REPLACE FUNCTION fn_pobierz_platnosci(p_id INT DEFAULT NULL)
 RETURNS SETOF Platnosci LANGUAGE plpgsql AS $$
 BEGIN
@@ -712,7 +708,7 @@ BEGIN
 END;
 $$;
 
--- 9B. Pobierz Serwisy (NAPRAWIONE: alias 's')
+-- 9B. Pobierz Serwisy
 CREATE OR REPLACE FUNCTION fn_pobierz_serwisy(p_id INT DEFAULT NULL)
 RETURNS SETOF Serwisy LANGUAGE plpgsql AS $$
 BEGIN
@@ -758,13 +754,11 @@ BEGIN
 END;
 $$;
 
-
 ---------------------------------------------------------------------------------
--- 4. -----ZAPYTANIA----- (PROBLEMOWE / ALGORYTMICZNE)
--- 10 Funkcji Zaawansowanych: 2 Proste, 8 Proceduralnych (LOOP, IF, VAR)
+-- 4. -----ZAPYTANIA-----
 ---------------------------------------------------------------------------------
 
--- 1. Wyszukiwanie dostępnych pojazdów [ULEPSZONA - Blokuje auta wymagające serwisu]
+-- 1. Wyszukiwanie dostępnych pojazdów
 CREATE OR REPLACE FUNCTION ZnajdzDostepnePojazdy(p_data_od DATE, p_data_do DATE, p_klasa_id INT DEFAULT NULL)
 RETURNS TABLE (ID_Pojazdu INT, Marka VARCHAR, Model VARCHAR, Nr_Rej VARCHAR, Cena DECIMAL, Klasa VARCHAR) AS $$
 BEGIN
@@ -788,13 +782,11 @@ BEGIN
           AND daterange(r.Data_Odbioru, r.Data_Zwrotu, '[]') && daterange(p_data_od, p_data_do, '[]')
       )
     GROUP BY p.ID_Pojazdu, p.Marka, p.Model, p.Numer_Rejestracyjny, k.Cena_Za_Dobe, k.Nazwa_Klasy
-    -- Tuta blokujemy auto, jeśli od ostatniego serwisu minęło 15 000 km lub więcej
     HAVING (p.Przebieg - COALESCE(MAX(s.Przebieg_W_Chwili_Serwisu), 0)) < 15000;
 END;
 $$ LANGUAGE plpgsql;
 
-
--- 2. Raport finansowy [ALGORYTMICZNA - Tabela Tymczasowa, Pętla]
+-- 2. Raport finansowy
 CREATE OR REPLACE FUNCTION RaportPrzychodow(p_rok INT)
 RETURNS TABLE (Miesiac TEXT, Gotowka DECIMAL, Karta DECIMAL, Przelew DECIMAL, Razem DECIMAL, Narastajaco DECIMAL) AS $$
 DECLARE
@@ -805,17 +797,13 @@ DECLARE
     v_total DECIMAL;
     v_narastajaco DECIMAL := 0;
 BEGIN
-    -- 1. Utwórz tabelę tymczasową
     CREATE TEMP TABLE IF NOT EXISTS TempRaport (
         m_id INT, m_nazwa TEXT, g DECIMAL, k DECIMAL, p DECIMAL, r DECIMAL, n DECIMAL
     ) ON COMMIT DROP;
 
-    -- 2. Wyczyść na wypadek ponownego użycia w tej samej sesji
     DELETE FROM TempRaport;
 
-    -- 3. Pętla przez 12 miesięcy
     FOR v_miesiac IN 1..12 LOOP
-        -- Obliczenia dla każdego miesiąca (Krok obliczeniowy)
         SELECT COALESCE(SUM(Kwota_Calkowita) FILTER (WHERE Forma_Platnosci = 'Gotówka'), 0),
                COALESCE(SUM(Kwota_Calkowita) FILTER (WHERE Forma_Platnosci = 'Karta'), 0),
                COALESCE(SUM(Kwota_Calkowita) FILTER (WHERE Forma_Platnosci = 'Przelew'), 0)
@@ -828,21 +816,18 @@ BEGIN
         v_total := v_gotowka + v_karta + v_przelew;
         v_narastajaco := v_narastajaco + v_total;
 
-        -- 4. Wstawienie do tabeli tymczasowej (DODANO PREFIX NUMERYCZNY, np. "01 - January")
         INSERT INTO TempRaport VALUES (
             v_miesiac,
-            TO_CHAR(MAKE_DATE(p_rok, v_miesiac, 1), 'MM - Month'), -- FIX SORTOWANIA
+            TO_CHAR(MAKE_DATE(p_rok, v_miesiac, 1), 'MM - Month'),
             v_gotowka, v_karta, v_przelew, v_total, v_narastajaco
         );
     END LOOP;
 
-    -- 5. Zwrócenie wyniku
     RETURN QUERY SELECT m_nazwa, g, k, p, r, n FROM TempRaport ORDER BY m_id;
 END;
 $$ LANGUAGE plpgsql;
 
-
--- 3. Ranking Klientów VIP [ALGORYTMICZNA - Zmienne, IF, Pętla po rekordach]
+-- 3. Ranking Klientów VIP
 CREATE OR REPLACE FUNCTION RankingKlientowVIP(top_n INT)
 RETURNS TABLE (Pozycja INT, Klient VARCHAR, Ile_Rezerwacji BIGINT, Wydano DECIMAL, Status_VIP VARCHAR) AS $$
 DECLARE
@@ -863,7 +848,6 @@ BEGIN
         v_rank := v_rank + 1;
         IF v_rank > top_n THEN EXIT; END IF;
 
-        -- Logika dodatkowa (nie tylko SQL)
         IF r.w_hajs > 5000 THEN Status_VIP := 'Platynowy';
         ELSIF r.w_hajs > 2000 THEN Status_VIP := 'Złoty';
         ELSE Status_VIP := 'Srebrny';
@@ -878,8 +862,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-
--- 4. Analiza przestojów floty [ALGORYTMICZNA - Kursor, Ręczne porównanie dat]
+-- 4. Analiza przestojów floty
 CREATE OR REPLACE FUNCTION AnalizaPrzestojow(min_dni_przerwy INT)
 RETURNS TABLE (Pojazd VARCHAR, Data_Zwrotu DATE, Data_Nastepnego_Odbioru DATE, Dni_Przestoju INT) AS $$
 DECLARE
@@ -892,15 +875,13 @@ DECLARE
     curr_row RECORD;
 BEGIN
     OPEN cur_rez;
-    FETCH cur_rez INTO prev_row; -- Pobierz pierwszy
+    FETCH cur_rez INTO prev_row;
 
     LOOP
         FETCH cur_rez INTO curr_row;
         EXIT WHEN NOT FOUND;
 
-        -- Sprawdź czy to to samo auto
         IF prev_row.ID_Pojazdu = curr_row.ID_Pojazdu THEN
-            -- Logika algorytmiczna w PL/pgSQL
             Dni_Przestoju := (curr_row.Data_Odbioru - prev_row.Data_Zwrotu);
 
             IF Dni_Przestoju >= min_dni_przerwy THEN
@@ -911,14 +892,13 @@ BEGIN
             END IF;
         END IF;
 
-        prev_row := curr_row; -- Przesuń okno
+        prev_row := curr_row;
     END LOOP;
     CLOSE cur_rez;
 END;
 $$ LANGUAGE plpgsql;
 
-
--- 5. Eksport historii klienta do JSON [PROSTA - ZWRACA WYNIK]
+-- 5. Eksport historii klienta do JSON
 CREATE OR REPLACE FUNCTION PobierzHistorieKlientaJSON(p_id_klienta INT)
 RETURNS JSON AS $$
 DECLARE
@@ -943,8 +923,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-
--- 6. Kalendarz obłożenia [ALGORYTMICZNA - Pętla po dniach]
+-- 6. Kalendarz obłożenia
 CREATE OR REPLACE FUNCTION OblozenieMiesieczne(p_rok INT, p_miesiac INT)
 RETURNS TABLE (Dzien DATE, Liczba_Aut INT) AS $$
 DECLARE
@@ -955,7 +934,6 @@ BEGIN
     v_koniec_miesiaca := (v_dzien + INTERVAL '1 month' - INTERVAL '1 day')::DATE;
 
     WHILE v_dzien <= v_koniec_miesiaca LOOP
-        -- Krok algorytmiczny: Wylicz dla konkretnej zmiennej daty
         SELECT COUNT(*) INTO Liczba_Aut
         FROM Rezerwacje
         WHERE Status_Rezerwacji != 'Anulowana'
@@ -964,25 +942,22 @@ BEGIN
         Dzien := v_dzien;
         RETURN NEXT;
 
-        v_dzien := v_dzien + 1; -- Inkubacja pętli
+        v_dzien := v_dzien + 1;
     END LOOP;
 END;
 $$ LANGUAGE plpgsql;
 
-
--- 7. Efektywność pracowników [ALGORYTMICZNA - POPRAWIONA ZMIENNA 'rec']
+-- 7. Efektywność pracowników
 CREATE OR REPLACE FUNCTION EfektywnoscPracownikow()
 RETURNS TABLE (Pracownik VARCHAR, Obrót DECIMAL, Ocena VARCHAR) AS $$
 DECLARE
     v_srednia DECIMAL;
     rec RECORD;
 BEGIN
-    -- Krok 1: Oblicz globalną średnią
     SELECT AVG(suma) INTO v_srednia FROM (
         SELECT SUM(Cena_Calkowita) as suma FROM Rezerwacje GROUP BY ID_Pracownika
     ) s;
 
-    -- Krok 2: Pętla po pracownikach (używamy 'rec' zamiast 'r', by uniknąć konfliktu nazw)
     FOR rec IN
         SELECT (p.Imie || ' ' || p.Nazwisko) as osoba, COALESCE(SUM(r.Cena_Calkowita),0) as total
         FROM Pracownicy p LEFT JOIN Rezerwacje r ON p.ID_Pracownika = r.ID_Pracownika
@@ -991,7 +966,6 @@ BEGIN
         Pracownik := rec.osoba;
         Obrót := rec.total;
 
-        -- Krok 3: Logika oceny
         IF rec.total > (v_srednia * 1.2) THEN Ocena := '⭐ Lider Sprzedaży';
         ELSIF rec.total < (v_srednia * 0.5) THEN Ocena := '⚠️ Poniżej normy';
         ELSE Ocena := '✅ W normie';
@@ -1002,8 +976,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-
--- 8. Status lojalnościowy klientów [ALGORYTMICZNA - Obliczenia dat w zmiennych]
+-- 8. Status lojalnościowy klientów
 CREATE OR REPLACE FUNCTION StatusKlientow()
 RETURNS TABLE (Klient VARCHAR, Dni_Temu INT, Status TEXT) AS $$
 DECLARE
@@ -1012,7 +985,6 @@ DECLARE
     v_diff INT;
 BEGIN
     FOR rec IN SELECT ID_Klienta, Imie, Nazwisko FROM Klienci LOOP
-        -- Pobierz datę do zmiennej
         SELECT MAX(Data_Zwrotu) INTO v_ostatni FROM Rezerwacje WHERE ID_Klienta = rec.ID_Klienta;
 
         Klient := rec.Imie || ' ' || rec.Nazwisko;
@@ -1024,7 +996,6 @@ BEGIN
             v_diff := (CURRENT_DATE - v_ostatni);
             Dni_Temu := v_diff;
 
-            -- Drabinka decyzyjna
             IF v_diff < 30 THEN Status := '🟢 Aktywny (Super)';
             ELSIF v_diff < 90 THEN Status := '🟡 Aktywny';
             ELSIF v_diff < 365 THEN Status := '🟠 Uśpiony';
@@ -1037,8 +1008,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-
--- 9. Prognoza serwisowa [ALGORYTMICZNA - Matematyka w zmiennych - POPRAWIONA]
+-- 9. Prognoza serwisowa
 CREATE OR REPLACE FUNCTION PrognozaSerwisowa(limit_km_serwisu INT DEFAULT 15000)
 RETURNS TABLE (Pojazd VARCHAR, Przebieg INT, Km_Do_Serwisu INT, Status TEXT) AS $$
 DECLARE
@@ -1046,19 +1016,15 @@ DECLARE
     v_ostatni_serwis INT;
     v_roznica INT;
 BEGIN
-    -- Używamy aliasu 'p' aby uniknąć dwuznaczności kolumny 'Przebieg'
     FOR r IN SELECT p.ID_Pojazdu, p.Marka, p.Model, p.Przebieg FROM Pojazdy p LOOP
-        -- Krok 1: Pobierz stan ostatniego serwisu
         SELECT COALESCE(MAX(s.Przebieg_W_Chwili_Serwisu), 0) INTO v_ostatni_serwis
         FROM Serwisy s WHERE s.ID_Pojazdu = r.ID_Pojazdu;
 
-        -- Krok 2: Matematyka
         v_roznica := r.Przebieg - v_ostatni_serwis;
         Km_Do_Serwisu := limit_km_serwisu - v_roznica;
         Pojazd := r.Marka || ' ' || r.Model;
         Przebieg := r.Przebieg;
 
-        -- Krok 3: Logika
         IF Km_Do_Serwisu <= 0 THEN Status := '❗ SERWIS NATYCHMIAST';
         ELSIF Km_Do_Serwisu < 1000 THEN Status := '⚠️ Blisko serwisu';
         ELSE Status := '✅ OK';
@@ -1069,18 +1035,15 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-
--- 10. Wyszukiwarka pojazdów [ALGORYTMICZNA - Przetwarzanie frazy]
+-- 10. Wyszukiwarka pojazdów
 CREATE OR REPLACE FUNCTION SzukajPojazdu(fraza TEXT)
 RETURNS SETOF Pojazdy AS $$
 DECLARE
     v_clean_fraza TEXT;
 BEGIN
-    -- Krok 1: Normalizacja danych wejściowych
     v_clean_fraza := TRIM(fraza);
     v_clean_fraza := '%' || v_clean_fraza || '%';
 
-    -- Krok 2: Wykonanie wyszukiwania
     RETURN QUERY
     SELECT * FROM Pojazdy p
     WHERE p.Marka ILIKE v_clean_fraza
