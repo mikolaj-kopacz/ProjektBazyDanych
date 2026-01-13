@@ -79,8 +79,8 @@ CREATE TABLE Pracownicy (
     Imie VARCHAR(50) NOT NULL,
     Nazwisko VARCHAR(50) NOT NULL,
     Stanowisko VARCHAR(50),
-    Login VARCHAR(50) UNIQUE NOT NULL, -- Dodane pod aplikację
-    Haslo VARCHAR(50) NOT NULL         -- Dodane pod aplikację
+    Login VARCHAR(50) UNIQUE NOT NULL,
+    Haslo VARCHAR(50) NOT NULL
 );
 
 CREATE TABLE Klienci (
@@ -136,7 +136,7 @@ CREATE TABLE Uslugi_Dodatkowe (
 );
 
 CREATE TABLE Rezerwacje_Uslugi (
-    ID_Rezerwacji_Uslugi SERIAL PRIMARY KEY, -- Dodany klucz główny dla łatwiejszego usuwania
+    ID_Rezerwacji_Uslugi SERIAL PRIMARY KEY,
     ID_Rezerwacji INT REFERENCES Rezerwacje(ID_Rezerwacji),
     ID_Uslugi INT REFERENCES Uslugi_Dodatkowe(ID_Uslugi),
     UNIQUE(ID_Rezerwacji, ID_Uslugi)
@@ -154,7 +154,7 @@ CREATE TABLE Platnosci (
 
 
 ---------------------------------------------------------------------------------
--- 3. -----CRUDY-----
+-- 3. -----CRUDY (Z OBSŁUGĄ BŁĘDÓW RAISE EXCEPTION)-----
 ---------------------------------------------------------------------------------
 
 -- === 1. KLIENCI ===
@@ -166,18 +166,26 @@ CREATE OR REPLACE PROCEDURE sp_dodaj_klienta(
 ) LANGUAGE plpgsql AS $$
 BEGIN
     IF EXISTS (SELECT 1 FROM Klienci WHERE PESEL = p_pesel) THEN
-        RAISE EXCEPTION 'Błąd: Klient o podanym numerze PESEL już istnieje!';
+        RAISE EXCEPTION 'Błąd: Klient o podanym numerze PESEL (%) już istnieje!', p_pesel;
     END IF;
+    IF EXISTS (SELECT 1 FROM Klienci WHERE Numer_Prawa_Jazdy = p_nr_prawa) THEN
+        RAISE EXCEPTION 'Błąd: Numer Prawa Jazdy (%) jest już przypisany do innego klienta!', p_nr_prawa;
+    END IF;
+
     INSERT INTO Klienci (Imie, Nazwisko, PESEL, Numer_Prawa_Jazdy, Telefon, Email, Adres)
     VALUES (p_imie, p_nazwisko, p_pesel, p_nr_prawa, p_telefon, p_email, p_adres);
 END;
 $$;
 
--- 1B. Pobierz Klientów
+-- 1B. Pobierz Klientów (POPRAWKA: Adres TEXT, alias k)
 CREATE OR REPLACE FUNCTION fn_pobierz_klientow(p_id INT DEFAULT NULL)
-RETURNS TABLE (ID_Klienta INT, Imie VARCHAR, Nazwisko VARCHAR, PESEL VARCHAR, Nr_Prawa_Jazdy VARCHAR, Telefon VARCHAR, Email VARCHAR, Adres VARCHAR)
+RETURNS TABLE (ID_Klienta INT, Imie VARCHAR, Nazwisko VARCHAR, PESEL VARCHAR, Nr_Prawa_Jazdy VARCHAR, Telefon VARCHAR, Email VARCHAR, Adres TEXT)
 LANGUAGE plpgsql AS $$
 BEGIN
+    IF p_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM Klienci k WHERE k.ID_Klienta = p_id) THEN
+        RAISE EXCEPTION 'Błąd: Nie znaleziono klienta o ID %', p_id;
+    END IF;
+
     RETURN QUERY
     SELECT k.ID_Klienta, k.Imie, k.Nazwisko, k.PESEL, k.Numer_Prawa_Jazdy, k.Telefon, k.Email, k.Adres
     FROM Klienci k
@@ -192,6 +200,10 @@ CREATE OR REPLACE PROCEDURE sp_aktualizuj_klienta(
     p_nr_prawa VARCHAR, p_telefon VARCHAR, p_email VARCHAR, p_adres VARCHAR
 ) LANGUAGE plpgsql AS $$
 BEGIN
+    IF p_pesel IS NOT NULL AND EXISTS (SELECT 1 FROM Klienci WHERE PESEL = p_pesel AND ID_Klienta != p_id) THEN
+        RAISE EXCEPTION 'Błąd: Podany PESEL należy już do innego klienta!';
+    END IF;
+
     UPDATE Klienci
     SET Imie = COALESCE(p_imie, Imie),
         Nazwisko = COALESCE(p_nazwisko, Nazwisko),
@@ -201,7 +213,10 @@ BEGIN
         Email = COALESCE(p_email, Email),
         Adres = COALESCE(p_adres, Adres)
     WHERE ID_Klienta = p_id;
-    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono klienta o ID %', p_id; END IF;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Nie znaleziono klienta o ID %', p_id;
+    END IF;
 END;
 $$;
 
@@ -209,31 +224,46 @@ $$;
 CREATE OR REPLACE PROCEDURE sp_usun_klienta(p_id INT)
 LANGUAGE plpgsql AS $$
 BEGIN
+    IF EXISTS (SELECT 1 FROM Rezerwacje WHERE ID_Klienta = p_id AND Status_Rezerwacji = 'Potwierdzona') THEN
+        RAISE EXCEPTION 'Błąd: Nie można usunąć klienta, który ma aktywne rezerwacje!';
+    END IF;
+
     DELETE FROM Klienci WHERE ID_Klienta = p_id;
-    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono klienta o ID %', p_id; END IF;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Nie znaleziono klienta o ID %', p_id;
+    END IF;
 END;
 $$;
 
 -- === 2. PRACOWNICY ===
 
--- 2A. Dodaj Pracownika (z loginem i hasłem)
+-- 2A. Dodaj Pracownika
 CREATE OR REPLACE PROCEDURE sp_dodaj_pracownika(
     p_imie VARCHAR, p_nazwisko VARCHAR, p_stanowisko VARCHAR,
-    p_login VARCHAR DEFAULT NULL, p_haslo VARCHAR DEFAULT NULL
+    p_login VARCHAR, p_haslo VARCHAR
 ) LANGUAGE plpgsql AS $$
 BEGIN
+    IF EXISTS (SELECT 1 FROM Pracownicy WHERE Login = p_login) THEN
+        RAISE EXCEPTION 'Błąd: Login "%" jest już zajęty!', p_login;
+    END IF;
+
     INSERT INTO Pracownicy (Imie, Nazwisko, Stanowisko, Login, Haslo)
     VALUES (p_imie, p_nazwisko, p_stanowisko, p_login, p_haslo);
 END;
 $$;
 
--- 2B. Pobierz Pracowników
+-- 2B. Pobierz Pracowników (NAPRAWIONE: alias 'p')
 CREATE OR REPLACE FUNCTION fn_pobierz_pracownikow(p_id INT DEFAULT NULL)
-RETURNS TABLE (ID_Pracownika INT, Imie VARCHAR, Nazwisko VARCHAR, Stanowisko VARCHAR)
+RETURNS TABLE (ID_Pracownika INT, Imie VARCHAR, Nazwisko VARCHAR, Stanowisko VARCHAR, Login VARCHAR)
 LANGUAGE plpgsql AS $$
 BEGIN
+    IF p_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM Pracownicy p WHERE p.ID_Pracownika = p_id) THEN
+        RAISE EXCEPTION 'Błąd: Nie znaleziono pracownika o ID %', p_id;
+    END IF;
+
     RETURN QUERY
-    SELECT p.ID_Pracownika, p.Imie, p.Nazwisko, p.Stanowisko
+    SELECT p.ID_Pracownika, p.Imie, p.Nazwisko, p.Stanowisko, p.Login
     FROM Pracownicy p
     WHERE p_id IS NULL OR p.ID_Pracownika = p_id
     ORDER BY p.ID_Pracownika;
@@ -250,17 +280,24 @@ BEGIN
         Nazwisko = COALESCE(p_nazwisko, Nazwisko),
         Stanowisko = COALESCE(p_stanowisko, Stanowisko)
     WHERE ID_Pracownika = p_id;
-    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono pracownika o ID %', p_id; END IF;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Nie znaleziono pracownika o ID %', p_id;
+    END IF;
 END;
 $$;
 
--- 2D. Usuń Pracownika (Z zabezpieczeniem historii)
+-- 2D. Usuń Pracownika
 CREATE OR REPLACE PROCEDURE sp_usun_pracownika(p_id INT)
 LANGUAGE plpgsql AS $$
 BEGIN
     UPDATE Rezerwacje SET ID_Pracownika = NULL WHERE ID_Pracownika = p_id;
+
     DELETE FROM Pracownicy WHERE ID_Pracownika = p_id;
-    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono pracownika o ID %', p_id; END IF;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Nie znaleziono pracownika o ID %', p_id;
+    END IF;
 END;
 $$;
 
@@ -271,15 +308,23 @@ CREATE OR REPLACE PROCEDURE sp_dodaj_klase(
     p_nazwa VARCHAR, p_cena DECIMAL
 ) LANGUAGE plpgsql AS $$
 BEGIN
+    IF EXISTS (SELECT 1 FROM Klasy_Pojazdow WHERE Nazwa_Klasy = p_nazwa) THEN
+        RAISE EXCEPTION 'Błąd: Klasa pojazdu "%" już istnieje!', p_nazwa;
+    END IF;
+
     INSERT INTO Klasy_Pojazdow (Nazwa_Klasy, Cena_Za_Dobe) VALUES (p_nazwa, p_cena);
 END;
 $$;
 
--- 3B. Pobierz Klasy
+-- 3B. Pobierz Klasy (NAPRAWIONE: alias 'k')
 CREATE OR REPLACE FUNCTION fn_pobierz_klasy(p_id INT DEFAULT NULL)
 RETURNS SETOF Klasy_Pojazdow LANGUAGE plpgsql AS $$
 BEGIN
-    RETURN QUERY SELECT * FROM Klasy_Pojazdow WHERE p_id IS NULL OR ID_Klasy = p_id ORDER BY ID_Klasy;
+    IF p_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM Klasy_Pojazdow k WHERE k.ID_Klasy = p_id) THEN
+        RAISE EXCEPTION 'Błąd: Nie znaleziono klasy pojazdu o ID %', p_id;
+    END IF;
+
+    RETURN QUERY SELECT * FROM Klasy_Pojazdow k WHERE p_id IS NULL OR k.ID_Klasy = p_id ORDER BY k.ID_Klasy;
 END;
 $$;
 
@@ -288,11 +333,18 @@ CREATE OR REPLACE PROCEDURE sp_aktualizuj_klase(
     p_id INT, p_nazwa VARCHAR, p_cena DECIMAL
 ) LANGUAGE plpgsql AS $$
 BEGIN
+    IF p_nazwa IS NOT NULL AND EXISTS (SELECT 1 FROM Klasy_Pojazdow WHERE Nazwa_Klasy = p_nazwa AND ID_Klasy != p_id) THEN
+        RAISE EXCEPTION 'Błąd: Nazwa klasy "%" jest już zajęta!', p_nazwa;
+    END IF;
+
     UPDATE Klasy_Pojazdow
     SET Nazwa_Klasy = COALESCE(p_nazwa, Nazwa_Klasy),
         Cena_Za_Dobe = COALESCE(p_cena, Cena_Za_Dobe)
     WHERE ID_Klasy = p_id;
-    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono klasy o ID %', p_id; END IF;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Nie znaleziono klasy o ID %', p_id;
+    END IF;
 END;
 $$;
 
@@ -300,8 +352,15 @@ $$;
 CREATE OR REPLACE PROCEDURE sp_usun_klase(p_id INT)
 LANGUAGE plpgsql AS $$
 BEGIN
+    IF EXISTS (SELECT 1 FROM Pojazdy WHERE ID_Klasy = p_id) THEN
+        RAISE EXCEPTION 'Błąd: Nie można usunąć klasy, do której przypisane są pojazdy!';
+    END IF;
+
     DELETE FROM Klasy_Pojazdow WHERE ID_Klasy = p_id;
-    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono klasy o ID %', p_id; END IF;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Nie znaleziono klasy o ID %', p_id;
+    END IF;
 END;
 $$;
 
@@ -313,16 +372,27 @@ CREATE OR REPLACE PROCEDURE sp_dodaj_pojazd(
     p_nr_rej VARCHAR, p_przebieg INT, p_stan VARCHAR, p_status VARCHAR
 ) LANGUAGE plpgsql AS $$
 BEGIN
+    IF NOT EXISTS (SELECT 1 FROM Klasy_Pojazdow WHERE ID_Klasy = p_id_klasy) THEN
+        RAISE EXCEPTION 'Błąd: Podana klasa pojazdu (ID: %) nie istnieje!', p_id_klasy;
+    END IF;
+    IF EXISTS (SELECT 1 FROM Pojazdy WHERE Numer_Rejestracyjny = p_nr_rej) THEN
+        RAISE EXCEPTION 'Błąd: Pojazd o numerze rejestracyjnym % już istnieje!', p_nr_rej;
+    END IF;
+
     INSERT INTO Pojazdy (ID_Klasy, Marka, Model, Rok_Produkcji, Numer_Rejestracyjny, Przebieg, Stan_Techniczny, Status_Dostepnosci)
     VALUES (p_id_klasy, p_marka, p_model, p_rok, p_nr_rej, p_przebieg, p_stan, p_status);
 END;
 $$;
 
--- 4B. Pobierz Pojazdy
+-- 4B. Pobierz Pojazdy (NAPRAWIONE: alias 'p')
 CREATE OR REPLACE FUNCTION fn_pobierz_pojazdy(p_id INT DEFAULT NULL)
 RETURNS SETOF Pojazdy LANGUAGE plpgsql AS $$
 BEGIN
-    RETURN QUERY SELECT * FROM Pojazdy WHERE p_id IS NULL OR ID_Pojazdu = p_id ORDER BY ID_Pojazdu;
+    IF p_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM Pojazdy p WHERE p.ID_Pojazdu = p_id) THEN
+        RAISE EXCEPTION 'Błąd: Nie znaleziono pojazdu o ID %', p_id;
+    END IF;
+
+    RETURN QUERY SELECT * FROM Pojazdy p WHERE p_id IS NULL OR p.ID_Pojazdu = p_id ORDER BY p.ID_Pojazdu;
 END;
 $$;
 
@@ -332,6 +402,10 @@ CREATE OR REPLACE PROCEDURE sp_aktualizuj_pojazd(
     p_nr_rej VARCHAR, p_przebieg INT, p_stan VARCHAR, p_status VARCHAR
 ) LANGUAGE plpgsql AS $$
 BEGIN
+    IF p_nr_rej IS NOT NULL AND EXISTS (SELECT 1 FROM Pojazdy WHERE Numer_Rejestracyjny = p_nr_rej AND ID_Pojazdu != p_id) THEN
+        RAISE EXCEPTION 'Błąd: Nr rejestracyjny % jest już zajęty przez inny pojazd!', p_nr_rej;
+    END IF;
+
     UPDATE Pojazdy
     SET ID_Klasy = COALESCE(p_id_klasy, ID_Klasy),
         Marka = COALESCE(p_marka, Marka),
@@ -342,7 +416,10 @@ BEGIN
         Stan_Techniczny = COALESCE(p_stan, Stan_Techniczny),
         Status_Dostepnosci = COALESCE(p_status, Status_Dostepnosci)
     WHERE ID_Pojazdu = p_id;
-    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono pojazdu o ID %', p_id; END IF;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Nie znaleziono pojazdu o ID %', p_id;
+    END IF;
 END;
 $$;
 
@@ -350,8 +427,15 @@ $$;
 CREATE OR REPLACE PROCEDURE sp_usun_pojazd(p_id INT)
 LANGUAGE plpgsql AS $$
 BEGIN
+    IF EXISTS (SELECT 1 FROM Rezerwacje WHERE ID_Pojazdu = p_id) THEN
+        RAISE EXCEPTION 'Błąd: Nie można usunąć pojazdu, który ma historię rezerwacji!';
+    END IF;
+
     DELETE FROM Pojazdy WHERE ID_Pojazdu = p_id;
-    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono pojazdu o ID %', p_id; END IF;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Nie znaleziono pojazdu o ID %', p_id;
+    END IF;
 END;
 $$;
 
@@ -364,16 +448,33 @@ CREATE OR REPLACE PROCEDURE sp_dodaj_rezerwacje(
     p_miejsce VARCHAR, p_cena DECIMAL, p_status VARCHAR
 ) LANGUAGE plpgsql AS $$
 BEGIN
+    -- Walidacja powiązań
+    IF NOT EXISTS (SELECT 1 FROM Klienci WHERE ID_Klienta = p_id_klienta) THEN
+        RAISE EXCEPTION 'Błąd: Klient o ID % nie istnieje!', p_id_klienta;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM Pojazdy WHERE ID_Pojazdu = p_id_pojazdu) THEN
+        RAISE EXCEPTION 'Błąd: Pojazd o ID % nie istnieje!', p_id_pojazdu;
+    END IF;
+
+    -- Walidacja dat
+    IF p_data_zwr < p_data_odb THEN
+        RAISE EXCEPTION 'Błąd: Data zwrotu nie może być wcześniejsza niż data odbioru!';
+    END IF;
+
     INSERT INTO Rezerwacje (ID_Klienta, ID_Pojazdu, ID_Pracownika, Data_Rezerwacji, Data_Odbioru, Data_Zwrotu, Miejsce_Odbioru, Cena_Calkowita, Status_Rezerwacji)
     VALUES (p_id_klienta, p_id_pojazdu, p_id_pracownika, p_data_rez, p_data_odb, p_data_zwr, p_miejsce, p_cena, p_status);
 END;
 $$;
 
--- 5B. Pobierz Rezerwacje
+-- 5B. Pobierz Rezerwacje (NAPRAWIONE: alias 'r')
 CREATE OR REPLACE FUNCTION fn_pobierz_rezerwacje(p_id INT DEFAULT NULL)
 RETURNS SETOF Rezerwacje LANGUAGE plpgsql AS $$
 BEGIN
-    RETURN QUERY SELECT * FROM Rezerwacje WHERE p_id IS NULL OR ID_Rezerwacji = p_id ORDER BY ID_Rezerwacji DESC;
+    IF p_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM Rezerwacje r WHERE r.ID_Rezerwacji = p_id) THEN
+        RAISE EXCEPTION 'Błąd: Nie znaleziono rezerwacji o ID %', p_id;
+    END IF;
+
+    RETURN QUERY SELECT * FROM Rezerwacje r WHERE p_id IS NULL OR r.ID_Rezerwacji = p_id ORDER BY r.ID_Rezerwacji DESC;
 END;
 $$;
 
@@ -384,6 +485,10 @@ CREATE OR REPLACE PROCEDURE sp_aktualizuj_rezerwacje(
     p_miejsce VARCHAR, p_cena DECIMAL, p_status VARCHAR
 ) LANGUAGE plpgsql AS $$
 BEGIN
+    IF p_data_odb IS NOT NULL AND p_data_zwr IS NOT NULL AND p_data_zwr < p_data_odb THEN
+        RAISE EXCEPTION 'Błąd: Data zwrotu nie może być wcześniejsza niż data odbioru!';
+    END IF;
+
     UPDATE Rezerwacje
     SET ID_Klienta = COALESCE(p_id_klienta, ID_Klienta),
         ID_Pojazdu = COALESCE(p_id_pojazdu, ID_Pojazdu),
@@ -395,7 +500,10 @@ BEGIN
         Cena_Calkowita = COALESCE(p_cena, Cena_Calkowita),
         Status_Rezerwacji = COALESCE(p_status, Status_Rezerwacji)
     WHERE ID_Rezerwacji = p_id;
-    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono rezerwacji o ID %', p_id; END IF;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Nie znaleziono rezerwacji o ID %', p_id;
+    END IF;
 END;
 $$;
 
@@ -404,7 +512,10 @@ CREATE OR REPLACE PROCEDURE sp_usun_rezerwacje(p_id INT)
 LANGUAGE plpgsql AS $$
 BEGIN
     DELETE FROM Rezerwacje WHERE ID_Rezerwacji = p_id;
-    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono rezerwacji o ID %', p_id; END IF;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Nie znaleziono rezerwacji o ID %', p_id;
+    END IF;
 END;
 $$;
 
@@ -419,11 +530,15 @@ BEGIN
 END;
 $$;
 
--- 6B. Pobierz Usługi
+-- 6B. Pobierz Usługi (NAPRAWIONE: alias 'u')
 CREATE OR REPLACE FUNCTION fn_pobierz_uslugi(p_id INT DEFAULT NULL)
 RETURNS SETOF Uslugi_Dodatkowe LANGUAGE plpgsql AS $$
 BEGIN
-    RETURN QUERY SELECT * FROM Uslugi_Dodatkowe WHERE p_id IS NULL OR ID_Uslugi = p_id ORDER BY ID_Uslugi;
+    IF p_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM Uslugi_Dodatkowe u WHERE u.ID_Uslugi = p_id) THEN
+        RAISE EXCEPTION 'Błąd: Nie znaleziono usługi dodatkowej o ID %', p_id;
+    END IF;
+
+    RETURN QUERY SELECT * FROM Uslugi_Dodatkowe u WHERE p_id IS NULL OR u.ID_Uslugi = p_id ORDER BY u.ID_Uslugi;
 END;
 $$;
 
@@ -436,7 +551,10 @@ BEGIN
     SET Nazwa_Uslugi = COALESCE(p_nazwa, Nazwa_Uslugi),
         Cena = COALESCE(p_cena, Cena)
     WHERE ID_Uslugi = p_id;
-    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono usługi o ID %', p_id; END IF;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Nie znaleziono usługi o ID %', p_id;
+    END IF;
 END;
 $$;
 
@@ -445,7 +563,10 @@ CREATE OR REPLACE PROCEDURE sp_usun_usluge(p_id INT)
 LANGUAGE plpgsql AS $$
 BEGIN
     DELETE FROM Uslugi_Dodatkowe WHERE ID_Uslugi = p_id;
-    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono usługi o ID %', p_id; END IF;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Nie znaleziono usługi o ID %', p_id;
+    END IF;
 END;
 $$;
 
@@ -456,18 +577,29 @@ CREATE OR REPLACE PROCEDURE sp_dodaj_usluge_do_rezerwacji(
     p_id_rez INT, p_id_uslugi INT
 ) LANGUAGE plpgsql AS $$
 BEGIN
+    IF NOT EXISTS (SELECT 1 FROM Rezerwacje WHERE ID_Rezerwacji = p_id_rez) THEN
+        RAISE EXCEPTION 'Błąd: Rezerwacja o ID % nie istnieje!', p_id_rez;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM Uslugi_Dodatkowe WHERE ID_Uslugi = p_id_uslugi) THEN
+        RAISE EXCEPTION 'Błąd: Usługa o ID % nie istnieje!', p_id_uslugi;
+    END IF;
     IF EXISTS (SELECT 1 FROM Rezerwacje_Uslugi WHERE ID_Rezerwacji = p_id_rez AND ID_Uslugi = p_id_uslugi) THEN
         RAISE EXCEPTION 'Błąd: Ta usługa jest już przypisana do tej rezerwacji!';
     END IF;
+
     INSERT INTO Rezerwacje_Uslugi (ID_Rezerwacji, ID_Uslugi) VALUES (p_id_rez, p_id_uslugi);
 END;
 $$;
 
--- 7B. Pobierz Usługi Rezerwacji
+-- 7B. Pobierz Usługi Rezerwacji (NAPRAWIONE: alias 'ru', 'u')
 CREATE OR REPLACE FUNCTION fn_pobierz_uslugi_rezerwacji(p_id_rez INT)
 RETURNS TABLE (ID_Przypisania INT, RezerwacjaID INT, Nazwa_Uslugi VARCHAR, Cena DECIMAL)
 LANGUAGE plpgsql AS $$
 BEGIN
+    IF NOT EXISTS (SELECT 1 FROM Rezerwacje r WHERE r.ID_Rezerwacji = p_id_rez) THEN
+        RAISE EXCEPTION 'Błąd: Rezerwacja o ID % nie istnieje, nie można pobrać usług.', p_id_rez;
+    END IF;
+
     RETURN QUERY
     SELECT ru.ID_Rezerwacji_Uslugi, ru.ID_Rezerwacji, u.Nazwa_Uslugi, u.Cena
     FROM Rezerwacje_Uslugi ru
@@ -484,7 +616,10 @@ BEGIN
     UPDATE Rezerwacje_Uslugi
     SET ID_Uslugi = p_nowe_id_uslugi
     WHERE ID_Rezerwacji_Uslugi = p_id_rez_uslugi;
-    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono przypisania usługi o ID %', p_id_rez_uslugi; END IF;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Nie znaleziono przypisania usługi o ID %', p_id_rez_uslugi;
+    END IF;
 END;
 $$;
 
@@ -493,7 +628,10 @@ CREATE OR REPLACE PROCEDURE sp_usun_usluge_z_rezerwacji(p_id_rez_uslugi INT)
 LANGUAGE plpgsql AS $$
 BEGIN
     DELETE FROM Rezerwacje_Uslugi WHERE ID_Rezerwacji_Uslugi = p_id_rez_uslugi;
-    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono przypisania usługi o ID %', p_id_rez_uslugi; END IF;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Nie znaleziono przypisania usługi o ID %', p_id_rez_uslugi;
+    END IF;
 END;
 $$;
 
@@ -505,16 +643,24 @@ CREATE OR REPLACE PROCEDURE sp_dodaj_platnosc(
     p_forma VARCHAR, p_status VARCHAR, p_faktura VARCHAR
 ) LANGUAGE plpgsql AS $$
 BEGIN
+    IF NOT EXISTS (SELECT 1 FROM Rezerwacje WHERE ID_Rezerwacji = p_id_rez) THEN
+        RAISE EXCEPTION 'Błąd: Rezerwacja o ID % nie istnieje!', p_id_rez;
+    END IF;
+
     INSERT INTO Platnosci (ID_Rezerwacji, Kwota_Calkowita, Data_Platnosci, Forma_Platnosci, Status_Platnosci, Numer_Faktury)
     VALUES (p_id_rez, p_kwota, p_data, p_forma, p_status, p_faktura);
 END;
 $$;
 
--- 8B. Pobierz Płatności
+-- 8B. Pobierz Płatności (NAPRAWIONE: alias 'pl')
 CREATE OR REPLACE FUNCTION fn_pobierz_platnosci(p_id INT DEFAULT NULL)
 RETURNS SETOF Platnosci LANGUAGE plpgsql AS $$
 BEGIN
-    RETURN QUERY SELECT * FROM Platnosci WHERE p_id IS NULL OR ID_Platnosci = p_id ORDER BY ID_Platnosci;
+    IF p_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM Platnosci pl WHERE pl.ID_Platnosci = p_id) THEN
+        RAISE EXCEPTION 'Błąd: Nie znaleziono płatności o ID %', p_id;
+    END IF;
+
+    RETURN QUERY SELECT * FROM Platnosci pl WHERE p_id IS NULL OR pl.ID_Platnosci = p_id ORDER BY pl.ID_Platnosci;
 END;
 $$;
 
@@ -531,7 +677,10 @@ BEGIN
         Status_Platnosci = COALESCE(p_status, Status_Platnosci),
         Numer_Faktury = COALESCE(p_faktura, Numer_Faktury)
     WHERE ID_Platnosci = p_id;
-    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono płatności o ID %', p_id; END IF;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Nie znaleziono płatności o ID %', p_id;
+    END IF;
 END;
 $$;
 
@@ -540,7 +689,10 @@ CREATE OR REPLACE PROCEDURE sp_usun_platnosc(p_id INT)
 LANGUAGE plpgsql AS $$
 BEGIN
     DELETE FROM Platnosci WHERE ID_Platnosci = p_id;
-    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono płatności o ID %', p_id; END IF;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Nie znaleziono płatności o ID %', p_id;
+    END IF;
 END;
 $$;
 
@@ -551,19 +703,27 @@ CREATE OR REPLACE PROCEDURE sp_dodaj_serwis(
     p_id_pojazdu INT, p_data DATE, p_opis VARCHAR, p_koszt DECIMAL, p_przebieg INT
 ) LANGUAGE plpgsql AS $$
 BEGIN
+    IF NOT EXISTS (SELECT 1 FROM Pojazdy WHERE ID_Pojazdu = p_id_pojazdu) THEN
+        RAISE EXCEPTION 'Błąd: Pojazd o ID % nie istnieje!', p_id_pojazdu;
+    END IF;
+
     INSERT INTO Serwisy (ID_Pojazdu, Data_Serwisu, Opis, Koszt, Przebieg_W_Chwili_Serwisu)
     VALUES (p_id_pojazdu, p_data, p_opis, p_koszt, p_przebieg);
 END;
 $$;
 
--- 9B. Pobierz Serwisy
+-- 9B. Pobierz Serwisy (NAPRAWIONE: alias 's')
 CREATE OR REPLACE FUNCTION fn_pobierz_serwisy(p_id INT DEFAULT NULL)
 RETURNS SETOF Serwisy LANGUAGE plpgsql AS $$
 BEGIN
+    IF p_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM Serwisy s WHERE s.ID_Serwisu = p_id) THEN
+        RAISE EXCEPTION 'Błąd: Nie znaleziono wpisu serwisowego o ID %', p_id;
+    END IF;
+
     RETURN QUERY
-    SELECT * FROM Serwisy
-    WHERE p_id IS NULL OR ID_Serwisu = p_id
-    ORDER BY Data_Serwisu DESC;
+    SELECT * FROM Serwisy s
+    WHERE p_id IS NULL OR s.ID_Serwisu = p_id
+    ORDER BY s.Data_Serwisu DESC;
 END;
 $$;
 
@@ -579,7 +739,10 @@ BEGIN
         Koszt = COALESCE(p_koszt, Koszt),
         Przebieg_W_Chwili_Serwisu = COALESCE(p_przebieg, Przebieg_W_Chwili_Serwisu)
     WHERE ID_Serwisu = p_id;
-    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono wpisu serwisowego o ID %', p_id; END IF;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Nie znaleziono wpisu serwisowego o ID %', p_id;
+    END IF;
 END;
 $$;
 
@@ -588,24 +751,34 @@ CREATE OR REPLACE PROCEDURE sp_usun_serwis(p_id INT)
 LANGUAGE plpgsql AS $$
 BEGIN
     DELETE FROM Serwisy WHERE ID_Serwisu = p_id;
-    IF NOT FOUND THEN RAISE EXCEPTION 'Nie znaleziono wpisu serwisowego o ID %', p_id; END IF;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Nie znaleziono wpisu serwisowego o ID %', p_id;
+    END IF;
 END;
 $$;
 
 
 ---------------------------------------------------------------------------------
 -- 4. -----ZAPYTANIA----- (PROBLEMOWE / ALGORYTMICZNE)
--- 10 Funkcji Zaawansowanych
+-- 10 Funkcji Zaawansowanych: 2 Proste, 8 Proceduralnych (LOOP, IF, VAR)
 ---------------------------------------------------------------------------------
 
--- 1. Wyszukiwanie dostępnych pojazdów (Daterange + Intersect)
+-- 1. Wyszukiwanie dostępnych pojazdów [ULEPSZONA - Blokuje auta wymagające serwisu]
 CREATE OR REPLACE FUNCTION ZnajdzDostepnePojazdy(p_data_od DATE, p_data_do DATE, p_klasa_id INT DEFAULT NULL)
 RETURNS TABLE (ID_Pojazdu INT, Marka VARCHAR, Model VARCHAR, Nr_Rej VARCHAR, Cena DECIMAL, Klasa VARCHAR) AS $$
 BEGIN
     RETURN QUERY
-    SELECT p.ID_Pojazdu, p.Marka, p.Model, p.Numer_Rejestracyjny, k.Cena_Za_Dobe, k.Nazwa_Klasy
+    SELECT
+        p.ID_Pojazdu,
+        p.Marka,
+        p.Model,
+        p.Numer_Rejestracyjny,
+        k.Cena_Za_Dobe,
+        k.Nazwa_Klasy
     FROM Pojazdy p
     JOIN Klasy_Pojazdow k ON p.ID_Klasy = k.ID_Klasy
+    LEFT JOIN Serwisy s ON p.ID_Pojazdu = s.ID_Pojazdu
     WHERE p.Status_Dostepnosci != 'W serwisie'
       AND (p_klasa_id IS NULL OR p.ID_Klasy = p_klasa_id)
       AND NOT EXISTS (
@@ -613,72 +786,139 @@ BEGIN
           WHERE r.ID_Pojazdu = p.ID_Pojazdu
           AND r.Status_Rezerwacji != 'Anulowana'
           AND daterange(r.Data_Odbioru, r.Data_Zwrotu, '[]') && daterange(p_data_od, p_data_do, '[]')
-      );
+      )
+    GROUP BY p.ID_Pojazdu, p.Marka, p.Model, p.Numer_Rejestracyjny, k.Cena_Za_Dobe, k.Nazwa_Klasy
+    -- Tuta blokujemy auto, jeśli od ostatniego serwisu minęło 15 000 km lub więcej
+    HAVING (p.Przebieg - COALESCE(MAX(s.Przebieg_W_Chwili_Serwisu), 0)) < 15000;
 END;
 $$ LANGUAGE plpgsql;
 
--- 2. Raport finansowy (Suma narastająca)
+
+-- 2. Raport finansowy [ALGORYTMICZNA - Tabela Tymczasowa, Pętla]
 CREATE OR REPLACE FUNCTION RaportPrzychodow(p_rok INT)
 RETURNS TABLE (Miesiac TEXT, Gotowka DECIMAL, Karta DECIMAL, Przelew DECIMAL, Razem DECIMAL, Narastajaco DECIMAL) AS $$
+DECLARE
+    v_miesiac INT;
+    v_gotowka DECIMAL;
+    v_karta DECIMAL;
+    v_przelew DECIMAL;
+    v_total DECIMAL;
+    v_narastajaco DECIMAL := 0;
 BEGIN
-    RETURN QUERY
-    WITH Dane AS (
-        SELECT
-            TO_CHAR(p.Data_Platnosci, 'Month') as w_m_txt,
-            EXTRACT(MONTH FROM p.Data_Platnosci) as w_m_num,
-            COALESCE(SUM(Kwota_Calkowita) FILTER (WHERE Forma_Platnosci = 'Gotówka'), 0) as w_gotowka,
-            COALESCE(SUM(Kwota_Calkowita) FILTER (WHERE Forma_Platnosci = 'Karta'), 0) as w_karta,
-            COALESCE(SUM(Kwota_Calkowita) FILTER (WHERE Forma_Platnosci = 'Przelew'), 0) as w_przelew,
-            SUM(Kwota_Calkowita) as w_razem
-        FROM Platnosci p
-        WHERE EXTRACT(YEAR FROM p.Data_Platnosci) = p_rok AND p.Status_Platnosci = 'Zrealizowana'
-        GROUP BY 1, 2
-    )
-    SELECT w_m_txt::TEXT, w_gotowka, w_karta, w_przelew, w_razem, SUM(w_razem) OVER (ORDER BY w_m_num)::DECIMAL
-    FROM Dane ORDER BY w_m_num;
+    -- 1. Utwórz tabelę tymczasową
+    CREATE TEMP TABLE IF NOT EXISTS TempRaport (
+        m_id INT, m_nazwa TEXT, g DECIMAL, k DECIMAL, p DECIMAL, r DECIMAL, n DECIMAL
+    ) ON COMMIT DROP;
+
+    -- 2. Wyczyść na wypadek ponownego użycia w tej samej sesji
+    DELETE FROM TempRaport;
+
+    -- 3. Pętla przez 12 miesięcy
+    FOR v_miesiac IN 1..12 LOOP
+        -- Obliczenia dla każdego miesiąca (Krok obliczeniowy)
+        SELECT COALESCE(SUM(Kwota_Calkowita) FILTER (WHERE Forma_Platnosci = 'Gotówka'), 0),
+               COALESCE(SUM(Kwota_Calkowita) FILTER (WHERE Forma_Platnosci = 'Karta'), 0),
+               COALESCE(SUM(Kwota_Calkowita) FILTER (WHERE Forma_Platnosci = 'Przelew'), 0)
+        INTO v_gotowka, v_karta, v_przelew
+        FROM Platnosci
+        WHERE EXTRACT(YEAR FROM Data_Platnosci) = p_rok
+          AND EXTRACT(MONTH FROM Data_Platnosci) = v_miesiac
+          AND Status_Platnosci = 'Zrealizowana';
+
+        v_total := v_gotowka + v_karta + v_przelew;
+        v_narastajaco := v_narastajaco + v_total;
+
+        -- 4. Wstawienie do tabeli tymczasowej (DODANO PREFIX NUMERYCZNY, np. "01 - January")
+        INSERT INTO TempRaport VALUES (
+            v_miesiac,
+            TO_CHAR(MAKE_DATE(p_rok, v_miesiac, 1), 'MM - Month'), -- FIX SORTOWANIA
+            v_gotowka, v_karta, v_przelew, v_total, v_narastajaco
+        );
+    END LOOP;
+
+    -- 5. Zwrócenie wyniku
+    RETURN QUERY SELECT m_nazwa, g, k, p, r, n FROM TempRaport ORDER BY m_id;
 END;
 $$ LANGUAGE plpgsql;
 
--- 3. Ranking Klientów VIP (DENSE_RANK)
+
+-- 3. Ranking Klientów VIP [ALGORYTMICZNA - Zmienne, IF, Pętla po rekordach]
 CREATE OR REPLACE FUNCTION RankingKlientowVIP(top_n INT)
-RETURNS TABLE (Pozycja BIGINT, Klient VARCHAR, Ile_Rezerwacji BIGINT, Wydano DECIMAL) AS $$
+RETURNS TABLE (Pozycja INT, Klient VARCHAR, Ile_Rezerwacji BIGINT, Wydano DECIMAL, Status_VIP VARCHAR) AS $$
+DECLARE
+    r RECORD;
+    v_rank INT := 0;
 BEGIN
-    RETURN QUERY
-    WITH Rank AS (
+    FOR r IN
         SELECT (k.Imie || ' ' || k.Nazwisko)::VARCHAR as w_klient,
-               COUNT(r.ID_Rezerwacji) as w_ile,
-               SUM(p.Kwota_Calkowita) as w_hajs,
-               DENSE_RANK() OVER (ORDER BY SUM(p.Kwota_Calkowita) DESC) as w_poz
+               COUNT(rez.ID_Rezerwacji) as w_ile,
+               COALESCE(SUM(p.Kwota_Calkowita), 0) as w_hajs
         FROM Klienci k
-        JOIN Rezerwacje r ON k.ID_Klienta = r.ID_Klienta
-        JOIN Platnosci p ON r.ID_Rezerwacji = p.ID_Rezerwacji
+        JOIN Rezerwacje rez ON k.ID_Klienta = rez.ID_Klienta
+        JOIN Platnosci p ON rez.ID_Rezerwacji = p.ID_Rezerwacji
         WHERE p.Status_Platnosci = 'Zrealizowana'
         GROUP BY k.ID_Klienta, k.Imie, k.Nazwisko
-    )
-    SELECT w_poz, w_klient, w_ile, w_hajs FROM Rank WHERE w_poz <= top_n;
+        ORDER BY w_hajs DESC
+    LOOP
+        v_rank := v_rank + 1;
+        IF v_rank > top_n THEN EXIT; END IF;
+
+        -- Logika dodatkowa (nie tylko SQL)
+        IF r.w_hajs > 5000 THEN Status_VIP := 'Platynowy';
+        ELSIF r.w_hajs > 2000 THEN Status_VIP := 'Złoty';
+        ELSE Status_VIP := 'Srebrny';
+        END IF;
+
+        Pozycja := v_rank;
+        Klient := r.w_klient;
+        Ile_Rezerwacji := r.w_ile;
+        Wydano := r.w_hajs;
+        RETURN NEXT;
+    END LOOP;
 END;
 $$ LANGUAGE plpgsql;
 
--- 4. Analiza przestojów floty (LEAD)
+
+-- 4. Analiza przestojów floty [ALGORYTMICZNA - Kursor, Ręczne porównanie dat]
 CREATE OR REPLACE FUNCTION AnalizaPrzestojow(min_dni_przerwy INT)
 RETURNS TABLE (Pojazd VARCHAR, Data_Zwrotu DATE, Data_Nastepnego_Odbioru DATE, Dni_Przestoju INT) AS $$
+DECLARE
+    cur_rez CURSOR FOR
+        SELECT p.ID_Pojazdu, (p.Marka || ' ' || p.Model) as auto, r.Data_Zwrotu, r.Data_Odbioru
+        FROM Pojazdy p JOIN Rezerwacje r ON p.ID_Pojazdu = r.ID_Pojazdu
+        WHERE r.Status_Rezerwacji != 'Anulowana' ORDER BY p.ID_Pojazdu, r.Data_Odbioru;
+
+    prev_row RECORD;
+    curr_row RECORD;
 BEGIN
-    RETURN QUERY
-    WITH Luki AS (
-        SELECT (p.Marka || ' ' || p.Model)::VARCHAR as w_auto,
-               r.Data_Zwrotu as w_data_zwrotu,
-               LEAD(r.Data_Odbioru) OVER (PARTITION BY p.ID_Pojazdu ORDER BY r.Data_Odbioru) as w_next_start
-        FROM Pojazdy p
-        JOIN Rezerwacje r ON p.ID_Pojazdu = r.ID_Pojazdu
-        WHERE r.Status_Rezerwacji != 'Anulowana'
-    )
-    SELECT w_auto, w_data_zwrotu, w_next_start, (w_next_start - w_data_zwrotu)::INT
-    FROM Luki
-    WHERE (w_next_start - w_data_zwrotu) >= min_dni_przerwy;
+    OPEN cur_rez;
+    FETCH cur_rez INTO prev_row; -- Pobierz pierwszy
+
+    LOOP
+        FETCH cur_rez INTO curr_row;
+        EXIT WHEN NOT FOUND;
+
+        -- Sprawdź czy to to samo auto
+        IF prev_row.ID_Pojazdu = curr_row.ID_Pojazdu THEN
+            -- Logika algorytmiczna w PL/pgSQL
+            Dni_Przestoju := (curr_row.Data_Odbioru - prev_row.Data_Zwrotu);
+
+            IF Dni_Przestoju >= min_dni_przerwy THEN
+                Pojazd := prev_row.auto;
+                Data_Zwrotu := prev_row.Data_Zwrotu;
+                Data_Nastepnego_Odbioru := curr_row.Data_Odbioru;
+                RETURN NEXT;
+            END IF;
+        END IF;
+
+        prev_row := curr_row; -- Przesuń okno
+    END LOOP;
+    CLOSE cur_rez;
 END;
 $$ LANGUAGE plpgsql;
 
--- 5. Eksport historii klienta do JSON
+
+-- 5. Eksport historii klienta do JSON [PROSTA - ZWRACA WYNIK]
 CREATE OR REPLACE FUNCTION PobierzHistorieKlientaJSON(p_id_klienta INT)
 RETURNS JSON AS $$
 DECLARE
@@ -703,80 +943,148 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 6. Kalendarz obłożenia (Generate Series)
+
+-- 6. Kalendarz obłożenia [ALGORYTMICZNA - Pętla po dniach]
 CREATE OR REPLACE FUNCTION OblozenieMiesieczne(p_rok INT, p_miesiac INT)
 RETURNS TABLE (Dzien DATE, Liczba_Aut INT) AS $$
+DECLARE
+    v_dzien DATE;
+    v_koniec_miesiaca DATE;
 BEGIN
-    RETURN QUERY
-    SELECT kalendarz::DATE, COUNT(r.ID_Rezerwacji)::INT
-    FROM generate_series(
-        MAKE_DATE(p_rok, p_miesiac, 1),
-        (MAKE_DATE(p_rok, p_miesiac, 1) + INTERVAL '1 month' - INTERVAL '1 day'),
-        '1 day'
-    ) as kalendarz
-    LEFT JOIN Rezerwacje r ON kalendarz BETWEEN r.Data_Odbioru AND r.Data_Zwrotu
-        AND r.Status_Rezerwacji != 'Anulowana'
-    GROUP BY kalendarz ORDER BY kalendarz;
+    v_dzien := MAKE_DATE(p_rok, p_miesiac, 1);
+    v_koniec_miesiaca := (v_dzien + INTERVAL '1 month' - INTERVAL '1 day')::DATE;
+
+    WHILE v_dzien <= v_koniec_miesiaca LOOP
+        -- Krok algorytmiczny: Wylicz dla konkretnej zmiennej daty
+        SELECT COUNT(*) INTO Liczba_Aut
+        FROM Rezerwacje
+        WHERE Status_Rezerwacji != 'Anulowana'
+          AND v_dzien BETWEEN Data_Odbioru AND Data_Zwrotu;
+
+        Dzien := v_dzien;
+        RETURN NEXT;
+
+        v_dzien := v_dzien + 1; -- Inkubacja pętli
+    END LOOP;
 END;
 $$ LANGUAGE plpgsql;
 
--- 7. Efektywność pracowników
+
+-- 7. Efektywność pracowników [ALGORYTMICZNA - POPRAWIONA ZMIENNA 'rec']
 CREATE OR REPLACE FUNCTION EfektywnoscPracownikow()
-RETURNS TABLE (Pracownik VARCHAR, Obrót DECIMAL, Srednia_Firmy DECIMAL, Wynik_Proc DECIMAL) AS $$
+RETURNS TABLE (Pracownik VARCHAR, Obrót DECIMAL, Ocena VARCHAR) AS $$
+DECLARE
+    v_srednia DECIMAL;
+    rec RECORD;
 BEGIN
-    RETURN QUERY
-    WITH Stats AS (
-        SELECT (pr.Imie || ' ' || pr.Nazwisko)::VARCHAR as osoba,
-               COALESCE(SUM(r.Cena_Calkowita), 0) as obrot
-        FROM Pracownicy pr
-        LEFT JOIN Rezerwacje r ON pr.ID_Pracownika = r.ID_Pracownika
-        GROUP BY pr.ID_Pracownika
-    )
-    SELECT osoba, obrot, AVG(obrot) OVER ()::DECIMAL(10,2), (obrot / NULLIF(AVG(obrot) OVER (), 0) * 100)::DECIMAL(5,2)
-    FROM Stats ORDER BY obrot DESC;
+    -- Krok 1: Oblicz globalną średnią
+    SELECT AVG(suma) INTO v_srednia FROM (
+        SELECT SUM(Cena_Calkowita) as suma FROM Rezerwacje GROUP BY ID_Pracownika
+    ) s;
+
+    -- Krok 2: Pętla po pracownikach (używamy 'rec' zamiast 'r', by uniknąć konfliktu nazw)
+    FOR rec IN
+        SELECT (p.Imie || ' ' || p.Nazwisko) as osoba, COALESCE(SUM(r.Cena_Calkowita),0) as total
+        FROM Pracownicy p LEFT JOIN Rezerwacje r ON p.ID_Pracownika = r.ID_Pracownika
+        GROUP BY p.ID_Pracownika ORDER BY total DESC
+    LOOP
+        Pracownik := rec.osoba;
+        Obrót := rec.total;
+
+        -- Krok 3: Logika oceny
+        IF rec.total > (v_srednia * 1.2) THEN Ocena := '⭐ Lider Sprzedaży';
+        ELSIF rec.total < (v_srednia * 0.5) THEN Ocena := '⚠️ Poniżej normy';
+        ELSE Ocena := '✅ W normie';
+        END IF;
+
+        RETURN NEXT;
+    END LOOP;
 END;
 $$ LANGUAGE plpgsql;
 
--- 8. Status lojalnościowy klientów
+
+-- 8. Status lojalnościowy klientów [ALGORYTMICZNA - Obliczenia dat w zmiennych]
 CREATE OR REPLACE FUNCTION StatusKlientow()
-RETURNS TABLE (Klient VARCHAR, Ostatni_Wynajem DATE, Dni_Temu INT, Status TEXT) AS $$
+RETURNS TABLE (Klient VARCHAR, Dni_Temu INT, Status TEXT) AS $$
+DECLARE
+    rec RECORD;
+    v_ostatni DATE;
+    v_diff INT;
 BEGIN
-    RETURN QUERY
-    SELECT (k.Imie || ' ' || k.Nazwisko)::VARCHAR, MAX(r.Data_Zwrotu), (CURRENT_DATE - MAX(r.Data_Zwrotu))::INT,
-           CASE
-               WHEN MAX(r.Data_Zwrotu) IS NULL THEN 'Nowy / Brak historii'
-               WHEN (CURRENT_DATE - MAX(r.Data_Zwrotu)) < 90 THEN 'Aktywny'
-               WHEN (CURRENT_DATE - MAX(r.Data_Zwrotu)) BETWEEN 90 AND 365 THEN 'Uśpiony'
-               ELSE 'Utracony'
-           END
-    FROM Klienci k
-    LEFT JOIN Rezerwacje r ON k.ID_Klienta = r.ID_Klienta
-    GROUP BY k.ID_Klienta ORDER BY MAX(r.Data_Zwrotu) DESC NULLS LAST;
+    FOR rec IN SELECT ID_Klienta, Imie, Nazwisko FROM Klienci LOOP
+        -- Pobierz datę do zmiennej
+        SELECT MAX(Data_Zwrotu) INTO v_ostatni FROM Rezerwacje WHERE ID_Klienta = rec.ID_Klienta;
+
+        Klient := rec.Imie || ' ' || rec.Nazwisko;
+
+        IF v_ostatni IS NULL THEN
+            Dni_Temu := NULL;
+            Status := 'Nowy / Brak Historii';
+        ELSE
+            v_diff := (CURRENT_DATE - v_ostatni);
+            Dni_Temu := v_diff;
+
+            -- Drabinka decyzyjna
+            IF v_diff < 30 THEN Status := '🟢 Aktywny (Super)';
+            ELSIF v_diff < 90 THEN Status := '🟡 Aktywny';
+            ELSIF v_diff < 365 THEN Status := '🟠 Uśpiony';
+            ELSE Status := '🔴 Utracony';
+            END IF;
+        END IF;
+
+        RETURN NEXT;
+    END LOOP;
 END;
 $$ LANGUAGE plpgsql;
 
--- 9. Prognoza serwisowa
+
+-- 9. Prognoza serwisowa [ALGORYTMICZNA - Matematyka w zmiennych - POPRAWIONA]
 CREATE OR REPLACE FUNCTION PrognozaSerwisowa(limit_km_serwisu INT DEFAULT 15000)
 RETURNS TABLE (Pojazd VARCHAR, Przebieg INT, Km_Do_Serwisu INT, Status TEXT) AS $$
+DECLARE
+    r RECORD;
+    v_ostatni_serwis INT;
+    v_roznica INT;
 BEGIN
-    RETURN QUERY
-    SELECT (p.Marka || ' ' || p.Model)::VARCHAR, p.Przebieg,
-           (limit_km_serwisu - (p.Przebieg - COALESCE(MAX(s.Przebieg_W_Chwili_Serwisu), 0)))::INT as pozostalo,
-           CASE
-               WHEN (p.Przebieg - COALESCE(MAX(s.Przebieg_W_Chwili_Serwisu), 0)) >= limit_km_serwisu THEN '❗ SERWIS NATYCHMIAST'
-               WHEN (p.Przebieg - COALESCE(MAX(s.Przebieg_W_Chwili_Serwisu), 0)) >= (limit_km_serwisu * 0.9) THEN '⚠️ Blisko serwisu'
-               ELSE '✅ OK'
-           END
-    FROM Pojazdy p LEFT JOIN Serwisy s ON p.ID_Pojazdu = s.ID_Pojazdu GROUP BY p.ID_Pojazdu;
+    -- Używamy aliasu 'p' aby uniknąć dwuznaczności kolumny 'Przebieg'
+    FOR r IN SELECT p.ID_Pojazdu, p.Marka, p.Model, p.Przebieg FROM Pojazdy p LOOP
+        -- Krok 1: Pobierz stan ostatniego serwisu
+        SELECT COALESCE(MAX(s.Przebieg_W_Chwili_Serwisu), 0) INTO v_ostatni_serwis
+        FROM Serwisy s WHERE s.ID_Pojazdu = r.ID_Pojazdu;
+
+        -- Krok 2: Matematyka
+        v_roznica := r.Przebieg - v_ostatni_serwis;
+        Km_Do_Serwisu := limit_km_serwisu - v_roznica;
+        Pojazd := r.Marka || ' ' || r.Model;
+        Przebieg := r.Przebieg;
+
+        -- Krok 3: Logika
+        IF Km_Do_Serwisu <= 0 THEN Status := '❗ SERWIS NATYCHMIAST';
+        ELSIF Km_Do_Serwisu < 1000 THEN Status := '⚠️ Blisko serwisu';
+        ELSE Status := '✅ OK';
+        END IF;
+
+        RETURN NEXT;
+    END LOOP;
 END;
 $$ LANGUAGE plpgsql;
 
--- 10. Wyszukiwarka pojazdów
+
+-- 10. Wyszukiwarka pojazdów [ALGORYTMICZNA - Przetwarzanie frazy]
 CREATE OR REPLACE FUNCTION SzukajPojazdu(fraza TEXT)
 RETURNS SETOF Pojazdy AS $$
+DECLARE
+    v_clean_fraza TEXT;
 BEGIN
+    -- Krok 1: Normalizacja danych wejściowych
+    v_clean_fraza := TRIM(fraza);
+    v_clean_fraza := '%' || v_clean_fraza || '%';
+
+    -- Krok 2: Wykonanie wyszukiwania
     RETURN QUERY
     SELECT * FROM Pojazdy p
-    WHERE p.Marka ILIKE '%' || fraza || '%' OR p.Model ILIKE '%' || fraza || '%' OR p.Numer_Rejestracyjny ILIKE '%' || fraza || '%';
+    WHERE p.Marka ILIKE v_clean_fraza
+       OR p.Model ILIKE v_clean_fraza
+       OR p.Numer_Rejestracyjny ILIKE v_clean_fraza;
 END;
 $$ LANGUAGE plpgsql;
