@@ -44,7 +44,8 @@ def get_client_id_by_pesel(pesel):
     try:
         res = run_query("SELECT fn_znajdz_klienta_pesel(%s) as id", (pesel,))
         if not res.empty and res.iloc[0]["id"]:
-            return res.iloc[0]["id"]
+            # FIX: Rzutowanie numpy.int64 na zwykły int
+            return int(res.iloc[0]["id"])
         return None
     except Exception:
         return None
@@ -306,71 +307,136 @@ elif menu == "🚗 Flota & Rezerwacje":
                 except Exception as e:
                     st.error(str(e))
 
+
         elif st.session_state["reservation_step"] == "form":
+
             car = st.session_state["selected_car_data"]
+
             d_start, d_end = st.session_state["dates"]
+
             price_total = ((d_end - d_start).days or 1) * car["cena"]
 
             st.markdown(f"### Rezerwacja: {car['marka']} {car['model']}")
+
             st.info(f"Termin: {d_start} - {d_end} | Cena: {price_total:.2f} PLN")
 
             method = st.radio("Klient:", ["Wybierz z bazy", "Nowy klient"], horizontal=True)
+
             sel_client_id = None
+
             client_str = ""
 
             with st.form("booking_form"):
+
                 if method == "Wybierz z bazy":
+
                     try:
+
                         cdf = run_query("SELECT * FROM fn_pobierz_klientow()")
+
                         if not cdf.empty:
+
                             copts = {f"{r['nazwisko']} {r['imie']} ({r['pesel']})": r['id_klienta'] for i, r in
                                      cdf.iterrows()}
+
                             chosen = st.selectbox("Klient", list(copts.keys()))
+
                             if chosen:
-                                sel_client_id = copts[chosen]
+                                sel_client_id = int(copts[chosen])  # FIX: upewniamy się, że to int
+
                                 client_str = chosen
+
                         else:
+
                             st.warning("Pusta baza klientów.")
+
                     except Exception as e:
+
                         st.error(str(e))
+
                 else:
+
                     c1, c2 = st.columns(2)
+
                     ni = c1.text_input("Imię")
+
                     nn = c2.text_input("Nazwisko")
+
                     np = c1.text_input("PESEL", max_chars=11)
+
                     npr = c2.text_input("Prawo Jazdy")
+
                     nt = c1.text_input("Telefon")
+
                     ne = c2.text_input("Email")
+
                     na = st.text_area("Adres")
+
                     client_str = f"{nn} {ni}"
 
-                place = st.text_input("Miejsce odbioru", "Siedziba Główna")
+
 
                 if st.form_submit_button("Potwierdź", type="primary"):
+
                     if method == "Nowy klient":
+
                         ok, msg, nid = add_new_client(ni, nn, np, npr, nt, ne, na)
+
                         if not ok:
                             st.error(msg)
+
                             st.stop()
-                        sel_client_id = nid
+
+                        sel_client_id = int(nid)
 
                     res_ok, res_msg = run_command(
+
                         "CALL sp_dodaj_rezerwacje(%s, %s, %s, %s, %s, %s, %s, %s, %s);",
-                        (sel_client_id, int(car["id_pojazdu"]), user_id, datetime.date.today(), d_start, d_end, place,
-                         float(price_total), "Potwierdzona")
+
+                        (
+
+                            sel_client_id,
+
+                            int(car["id_pojazdu"]),
+
+                            user_id,
+
+                            datetime.date.today(),
+
+                            d_start,
+
+                            d_end,
+
+                            "Siedziba",
+
+                            float(price_total),
+
+                            "Potwierdzona"
+
+                        )
+
                     )
+
                     if res_ok:
+
                         st.session_state["reservation_step"] = "success"
+
                         st.session_state["last_reservation_data"] = {
+
                             "car": car, "client_name": client_str, "d_start": d_start, "d_end": d_end,
                             "price": price_total, "worker": user_name
+
                         }
+
                         st.rerun()
+
                     else:
+
                         st.error(res_msg)
 
             if st.button("Anuluj"):
                 st.session_state["reservation_step"] = None
+
                 st.rerun()
 
         elif st.session_state["reservation_step"] == "success":
