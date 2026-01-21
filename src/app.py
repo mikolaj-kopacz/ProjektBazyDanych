@@ -1,9 +1,10 @@
 import streamlit as st
 import pandas as pd
-from db import run_query, run_command, check_login
 import datetime
 import time
 from fpdf import FPDF
+
+import db
 
 st.set_page_config(
     page_title="System Wypożyczalni", layout="wide", initial_sidebar_state="expanded"
@@ -22,63 +23,12 @@ st.markdown(
         box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
     }
     div[data-testid="stMetric"] * { color: #0D47A1 !important; }
-    .reservation-box {
-        border: 2px solid #66BB6A;
-        padding: 20px;
-        border-radius: 12px;
-        background-color: #E8F5E9 !important;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
-    .reservation-box h3, .reservation-box p, .reservation-box b, .reservation-box span {
-        color: #1B5E20 !important;
-    }
     </style>
 """,
     unsafe_allow_html=True,
 )
 
-
-# --- FUNKCJE POMOCNICZE (WRAPPERY NA BAZĘ) ---
-
-def get_client_id_by_pesel(pesel):
-    try:
-        res = run_query("SELECT fn_znajdz_klienta_pesel(%s) as id", (pesel,))
-        if not res.empty and res.iloc[0]["id"]:
-            # FIX: Rzutowanie numpy.int64 na zwykły int
-            return int(res.iloc[0]["id"])
-        return None
-    except Exception:
-        return None
-
-
-def add_new_client(imie, nazwisko, pesel, nr_prawa, telefon, email, adres):
-    try:
-        sql = "CALL sp_dodaj_klienta(%s, %s, %s, %s, %s, %s, %s);"
-        success, msg = run_command(
-            sql, (imie, nazwisko, pesel, nr_prawa, telefon, email, adres)
-        )
-        if success:
-            return True, "Dodano klienta.", get_client_id_by_pesel(pesel)
-        return False, msg, None
-    except Exception as e:
-        return False, f"Błąd: {str(e)}", None
-
-
-def update_client(cid, imie, nazwisko, pesel, nr_prawa, telefon, email, adres):
-    try:
-        sql = "CALL sp_aktualizuj_klienta(%s, %s, %s, %s, %s, %s, %s, %s);"
-        return run_command(sql, (cid, imie, nazwisko, pesel, nr_prawa, telefon, email, adres))
-    except Exception as e:
-        return False, f"Błąd: {str(e)}"
-
-
-def delete_client(cid):
-    try:
-        sql = "CALL sp_usun_klienta(%s);"
-        return run_command(sql, (cid,))
-    except Exception as e:
-        return False, f"Błąd: {str(e)}"
-
+# --- FUNKCJE POMOCNICZE (UI / PDF) ---
 
 def clean_text(text):
     if not isinstance(text, str):
@@ -90,7 +40,6 @@ def clean_text(text):
     for k, v in replacements.items():
         text = text.replace(k, v)
     return text
-
 
 def create_pdf_confirmation(klient_info, auto_info, data_od, data_do, cena, pracownik):
     try:
@@ -123,41 +72,6 @@ def create_pdf_confirmation(klient_info, auto_info, data_od, data_do, cena, prac
         print(f"Błąd PDF: {e}")
         return b""
 
-
-# Wrapper Functions for other entities
-def add_employee(imie, nazwisko, stanowisko, login, haslo):
-    return run_command("CALL sp_dodaj_pracownika(%s, %s, %s, %s, %s);", (imie, nazwisko, stanowisko, login, haslo))
-
-
-def update_employee(emp_id, imie, nazwisko, stanowisko):
-    return run_command("CALL sp_aktualizuj_pracownika(%s, %s, %s, %s);", (emp_id, imie, nazwisko, stanowisko))
-
-
-def delete_employee(emp_id):
-    return run_command("CALL sp_usun_pracownika(%s);", (emp_id,))
-
-
-def add_vehicle(id_klasy, marka, model, rok, nr_rej, przebieg, stan, status):
-    return run_command("CALL sp_dodaj_pojazd(%s, %s, %s, %s, %s, %s, %s, %s);",
-                       (id_klasy, marka, model, rok, nr_rej, przebieg, stan, status))
-
-
-def update_vehicle_status(id_pojazdu, przebieg, stan, status):
-    return run_command("CALL sp_aktualizuj_pojazd(%s, NULL, NULL, NULL, NULL, NULL, %s, %s, %s);",
-                       (id_pojazdu, przebieg, stan, status))
-
-
-def delete_vehicle(id_pojazdu):
-    res, msg = run_command("CALL sp_usun_pojazd(%s);", (id_pojazdu,))
-    if not res and "historię rezerwacji" in msg:
-        return False, "Nie można usunąć pojazdu z historią. Zmień status na 'Wycofany'."
-    return res, msg
-
-
-def add_service_entry(id_pojazdu, data, opis, koszt, przebieg):
-    return run_command("CALL sp_dodaj_serwis(%s, %s, %s, %s, %s);", (id_pojazdu, data, opis, koszt, przebieg))
-
-
 # --- LOGIKA SESJI ---
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
@@ -180,7 +94,7 @@ if not st.session_state["logged_in"]:
             pw = st.text_input("Hasło", type="password")
             if st.form_submit_button("Zaloguj się", type="primary", use_container_width=True):
                 try:
-                    user_data = check_login(user, pw)
+                    user_data = db.check_login(user, pw)
                     if user_data:
                         st.session_state["logged_in"] = True
                         st.session_state["user_info"] = user_data
@@ -220,7 +134,7 @@ if menu == "🏠 Pulpit":
         st.title("🏠 Pulpit")
 
     try:
-        stats = run_query("SELECT * FROM fn_statystyki_pulpit()")
+        stats = db.get_dashboard_stats()
         if not stats.empty:
             count_cars = stats.iloc[0]["liczba_pojazdow"]
             count_clients = stats.iloc[0]["liczba_klientow"]
@@ -243,7 +157,7 @@ if menu == "🏠 Pulpit":
         st.subheader("📊 Obłożenie")
         try:
             now = datetime.date.today()
-            df_chart = run_query("SELECT * FROM OblozenieMiesieczne(%s, %s)", (now.year, now.month))
+            df_chart = db.get_monthly_occupancy(now.year, now.month)
             if not df_chart.empty:
                 st.area_chart(df_chart.set_index("dzien")["liczba_aut"])
             else:
@@ -254,7 +168,7 @@ if menu == "🏠 Pulpit":
     with col_alerts:
         st.subheader("⚠️ Pilne Sprawy (Serwis)")
         try:
-            df_serv = run_query("SELECT * FROM fn_pobierz_pojazdy_alert(15000)")
+            df_serv = db.get_urgent_alerts(15000)
             if not df_serv.empty:
                 good_states = ["sprawny", "idealny", "bardzo dobry", "dobry", "nowy"]
                 urgent = df_serv[
@@ -287,7 +201,7 @@ elif menu == "🚗 Flota & Rezerwacje":
 
             if st.session_state.get("search_performed"):
                 try:
-                    df_auta = run_query("SELECT * FROM ZnajdzDostepnePojazdy(%s, %s, NULL)", (d_od, d_do))
+                    df_auta = db.find_available_vehicles(d_od, d_do)
                     if df_auta.empty:
                         st.warning("Brak aut.")
                     else:
@@ -309,134 +223,71 @@ elif menu == "🚗 Flota & Rezerwacje":
 
 
         elif st.session_state["reservation_step"] == "form":
-
             car = st.session_state["selected_car_data"]
-
             d_start, d_end = st.session_state["dates"]
-
             price_total = ((d_end - d_start).days or 1) * car["cena"]
 
             st.markdown(f"### Rezerwacja: {car['marka']} {car['model']}")
-
             st.info(f"Termin: {d_start} - {d_end} | Cena: {price_total:.2f} PLN")
-
             method = st.radio("Klient:", ["Wybierz z bazy", "Nowy klient"], horizontal=True)
-
             sel_client_id = None
-
             client_str = ""
 
             with st.form("booking_form"):
-
                 if method == "Wybierz z bazy":
-
                     try:
-
-                        cdf = run_query("SELECT * FROM fn_pobierz_klientow()")
-
+                        cdf = db.get_all_clients()
                         if not cdf.empty:
-
                             copts = {f"{r['nazwisko']} {r['imie']} ({r['pesel']})": r['id_klienta'] for i, r in
                                      cdf.iterrows()}
-
                             chosen = st.selectbox("Klient", list(copts.keys()))
-
                             if chosen:
-                                sel_client_id = int(copts[chosen])  # FIX: upewniamy się, że to int
-
+                                sel_client_id = int(copts[chosen])
                                 client_str = chosen
-
                         else:
-
                             st.warning("Pusta baza klientów.")
-
                     except Exception as e:
-
                         st.error(str(e))
-
                 else:
-
                     c1, c2 = st.columns(2)
-
                     ni = c1.text_input("Imię")
-
                     nn = c2.text_input("Nazwisko")
-
                     np = c1.text_input("PESEL", max_chars=11)
-
                     npr = c2.text_input("Prawo Jazdy")
-
                     nt = c1.text_input("Telefon")
-
                     ne = c2.text_input("Email")
-
                     na = st.text_area("Adres")
-
                     client_str = f"{nn} {ni}"
 
-
-
                 if st.form_submit_button("Potwierdź", type="primary"):
-
                     if method == "Nowy klient":
-
-                        ok, msg, nid = add_new_client(ni, nn, np, npr, nt, ne, na)
-
+                        ok, msg, nid = db.add_new_client(ni, nn, np, npr, nt, ne, na)
                         if not ok:
                             st.error(msg)
-
                             st.stop()
-
                         sel_client_id = int(nid)
 
-                    res_ok, res_msg = run_command(
-
-                        "CALL sp_dodaj_rezerwacje(%s, %s, %s, %s, %s, %s, %s, %s, %s);",
-
-                        (
-
-                            sel_client_id,
-
-                            int(car["id_pojazdu"]),
-
-                            user_id,
-
-                            datetime.date.today(),
-
-                            d_start,
-
-                            d_end,
-
-                            "Siedziba",
-
-                            float(price_total),
-
-                            "Potwierdzona"
-
-                        )
-
+                    res_ok, res_msg = db.add_reservation(
+                        sel_client_id,
+                        int(car["id_pojazdu"]),
+                        user_id,
+                        d_start,
+                        d_end,
+                        float(price_total)
                     )
 
                     if res_ok:
-
                         st.session_state["reservation_step"] = "success"
-
                         st.session_state["last_reservation_data"] = {
-
                             "car": car, "client_name": client_str, "d_start": d_start, "d_end": d_end,
                             "price": price_total, "worker": user_name
-
                         }
-
                         st.rerun()
-
                     else:
-
                         st.error(res_msg)
 
             if st.button("Anuluj"):
                 st.session_state["reservation_step"] = None
-
                 st.rerun()
 
         elif st.session_state["reservation_step"] == "success":
@@ -454,15 +305,12 @@ elif menu == "🚗 Flota & Rezerwacje":
     with tab_fleet:
         st.subheader("🛠️ Zarządzanie Flotą")
         try:
-            # 1. Pobieramy wszystkie auta
-            all_cars = run_query("SELECT * FROM fn_pobierz_pojazdy()")
+            all_cars = db.get_all_vehicles()
         except:
             all_cars = pd.DataFrame()
 
-        # 2. WYŚWIETLAMY TABELĘ ZE WSZYSTKIMI AUTAMI (NOWOŚĆ)
         st.markdown("#### 📋 Lista Wszystkich Pojazdów")
         if not all_cars.empty:
-            # Wybieramy tylko czytelne kolumny, żeby nie śmiecić ID klasy itp.
             st.dataframe(
                 all_cars[
                     ["id_pojazdu", "marka", "model", "numer_rejestracyjny", "status_dostepnosci", "stan_techniczny",
@@ -475,7 +323,6 @@ elif menu == "🚗 Flota & Rezerwacje":
 
         st.markdown("---")
 
-        # 3. Sekcja Edycji i Zarządzania
         with st.container(border=True):
             st.markdown("#### 🔧 Szybka Edycja Stanu")
             if not all_cars.empty:
@@ -493,7 +340,7 @@ elif menu == "🚗 Flota & Rezerwacje":
                         nkm = c2.number_input("Przebieg", value=int(crow["przebieg"]))
                         ntxt = c3.text_input("Stan Techniczny", value=crow["stan_techniczny"])
                         if st.form_submit_button("Zapisz"):
-                            ok, msg = update_vehicle_status(int(cid), int(nkm), ntxt, nst)
+                            ok, msg = db.update_vehicle_status(int(cid), int(nkm), ntxt, nst)
                             if ok:
                                 st.success("Zapisano")
                                 time.sleep(1)
@@ -506,7 +353,7 @@ elif menu == "🚗 Flota & Rezerwacje":
             mt1, mt2, mt3 = st.tabs(["Dodaj", "Usuń", "Serwis"])
             with mt1:
                 with st.form("new_car"):
-                    clss = run_query("SELECT * FROM fn_pobierz_klasy()")
+                    clss = db.get_vehicle_classes()
                     if not clss.empty:
                         copt = {f"{r['nazwa_klasy']}": r['id_klasy'] for i, r in clss.iterrows()}
                         sc = st.selectbox("Klasa", list(copt.keys()))
@@ -518,7 +365,7 @@ elif menu == "🚗 Flota & Rezerwacje":
                         km = c1.number_input("Przebieg", 0)
                         stt = c2.text_input("Stan", "Sprawny")
                         if st.form_submit_button("Dodaj"):
-                            ok, m = add_vehicle(copt[sc], ma, mo, ro, nr, km, stt, "Dostępny")
+                            ok, m = db.add_vehicle(copt[sc], ma, mo, ro, nr, km, stt, "Dostępny")
                             if ok:
                                 st.success("Dodano")
                                 time.sleep(1)
@@ -529,7 +376,7 @@ elif menu == "🚗 Flota & Rezerwacje":
                 if not all_cars.empty:
                     tod = st.selectbox("Usuń auto", list(opts.keys()), key="del_c")
                     if st.button("Usuń trwale"):
-                        ok, m = delete_vehicle(opts[tod])
+                        ok, m = db.delete_vehicle(opts[tod])
                         if ok:
                             st.success("Usunięto")
                             time.sleep(1)
@@ -544,10 +391,10 @@ elif menu == "🚗 Flota & Rezerwacje":
                     desc = st.text_input("Opis")
                     done = st.checkbox("Naprawa zakończona? (Zmień na 'Sprawny')")
                     if st.form_submit_button("Rejestruj"):
-                        ok, m = add_service_entry(opts[scs], dt, desc, cost, 0)  # Przebieg update w update_status
+                        ok, m = db.add_service_entry(opts[scs], dt, desc, cost, 0)
                         if ok:
                             if done:
-                                update_vehicle_status(opts[scs], int(
+                                db.update_vehicle_status(opts[scs], int(
                                     all_cars[all_cars['id_pojazdu'] == opts[scs]].iloc[0]['przebieg']), "Sprawny",
                                                       "Dostępny")
                             st.success("Dodano wpis")
@@ -560,22 +407,20 @@ elif menu == "🚗 Flota & Rezerwacje":
         st.subheader("📊 Analizy")
         fraza = st.text_input("Szukaj pojazdu (marka/rej)")
         if fraza:
-            rs = run_query("SELECT * FROM SzukajPojazdu(%s)", (fraza,))
+            rs = db.search_vehicles(fraza)
             st.dataframe(rs)
 
-# ----------------- KLIENCI (NOWA, ROZBUDOWANA ZAKŁADKA) -----------------
+# ----------------- KLIENCI -----------------
 elif menu == "👥 Klienci":
     st.title("👥 Zarządzanie Klientami")
-
     tab_list, tab_add, tab_manage, tab_crm = st.tabs(
         ["📂 Przeglądaj", "➕ Dodaj Nowego", "✏️ Zarządzaj (Edytuj/Usuń)", "🏆 CRM"])
 
-    # 1. PRZEGLĄDANIE
     with tab_list:
         st.subheader("Lista Klientów")
         search_q = st.text_input("🔍 Filtruj (Nazwisko/PESEL):")
         try:
-            df_cli = run_query("SELECT * FROM fn_pobierz_klientow()")
+            df_cli = db.get_all_clients()
             if not df_cli.empty:
                 if search_q:
                     df_cli = df_cli[df_cli.apply(lambda row: search_q.lower() in str(row).lower(), axis=1)]
@@ -587,13 +432,12 @@ elif menu == "👥 Klienci":
             st.caption("Pobierz historię wypożyczeń klienta")
             cid_hist = st.number_input("ID Klienta", min_value=1, step=1)
             if st.button("Pobierz JSON Historii"):
-                h = run_query("SELECT PobierzHistorieKlientaJSON(%s) as j", (cid_hist,))
+                h = db.get_client_history_json(cid_hist)
                 if not h.empty and h.iloc[0]['j']:
                     st.json(h.iloc[0]['j'])
         except Exception as e:
             st.error(f"Błąd: {e}")
 
-    # 2. DODAWANIE
     with tab_add:
         st.subheader("Rejestracja Nowego Klienta")
         with st.form("add_client_form"):
@@ -608,7 +452,7 @@ elif menu == "👥 Klienci":
 
             if st.form_submit_button("✅ Dodaj Klienta"):
                 if i and n and p and pj:
-                    ok, msg, new_id = add_new_client(i, n, p, pj, t, e, a)
+                    ok, msg, new_id = db.add_new_client(i, n, p, pj, t, e, a)
                     if ok:
                         st.success(f"Klient dodany! ID: {new_id}")
                         time.sleep(1)
@@ -618,11 +462,10 @@ elif menu == "👥 Klienci":
                 else:
                     st.warning("Wymagane pola: Imię, Nazwisko, PESEL, Prawo Jazdy.")
 
-    # 3. ZARZĄDZANIE (EDYCJA / USUWANIE)
     with tab_manage:
         st.subheader("Edycja i Usuwanie")
         try:
-            df_cli_m = run_query("SELECT * FROM fn_pobierz_klientow()")
+            df_cli_m = db.get_all_clients()
         except:
             df_cli_m = pd.DataFrame()
 
@@ -650,7 +493,7 @@ elif menu == "👥 Klienci":
                         ea = st.text_area("Adres", value=curr_c["adres"] if curr_c["adres"] else "")
 
                         if st.form_submit_button("💾 Zapisz Zmiany"):
-                            ok, msg = update_client(int(sel_id), ei, en, ep, epj, et, ee, ea)
+                            ok, msg = db.update_client(int(sel_id), ei, en, ep, epj, et, ee, ea)
                             if ok:
                                 st.success("Dane zaktualizowane!")
                                 time.sleep(1)
@@ -662,7 +505,7 @@ elif menu == "👥 Klienci":
                     st.markdown("#### 🗑️ Usuń Klienta")
                     st.warning("Uwaga: Usunięcie jest możliwe tylko, jeśli klient nie ma historii wypożyczeń.")
                     if st.button("Usuń trwale z bazy", type="primary"):
-                        ok, msg = delete_client(int(sel_id))
+                        ok, msg = db.delete_client(int(sel_id))
                         if ok:
                             st.success("Klient usunięty.")
                             time.sleep(1)
@@ -672,19 +515,18 @@ elif menu == "👥 Klienci":
         else:
             st.info("Brak klientów do zarządzania.")
 
-    # 4. CRM
     with tab_crm:
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("#### Statusy")
             try:
-                st.dataframe(run_query("SELECT * FROM StatusKlientow()"), hide_index=True)
+                st.dataframe(db.get_client_statuses(), hide_index=True)
             except Exception as e:
                 st.error(str(e))
         with c2:
             st.markdown("#### Ranking VIP")
             try:
-                st.dataframe(run_query("SELECT * FROM RankingKlientowVIP(5)"), hide_index=True)
+                st.dataframe(db.get_vip_ranking(5), hide_index=True)
             except Exception as e:
                 st.error(str(e))
 
@@ -693,7 +535,7 @@ elif menu == "💰 Finanse":
     st.title("💰 Raporty Finansowe")
     rok = st.selectbox("Rok", [2023, 2024, 2025, 2026], index=3)
     try:
-        df_fin = run_query("SELECT * FROM RaportPrzychodow(%s)", (rok,))
+        df_fin = db.get_revenue_report(rok)
         if not df_fin.empty:
             c1, c2 = st.columns([1, 2])
             c1.dataframe(df_fin[["miesiac", "razem", "narastajaco"]], use_container_width=True)
@@ -711,7 +553,7 @@ elif menu == "💼 Pracownicy (Admin)":
     with t1:
         st.info("Ranking sprzedaży pracowników (kto ile zarobił dla firmy)")
         try:
-            hr = run_query("SELECT * FROM EfektywnoscPracownikow()")
+            hr = db.get_employee_efficiency()
             st.dataframe(hr, use_container_width=True)
             if not hr.empty:
                 st.bar_chart(hr.set_index("pracownik")["obrót"])
@@ -720,16 +562,13 @@ elif menu == "💼 Pracownicy (Admin)":
 
     with t2:
         try:
-            # Pobieramy listę pracowników
-            staff = run_query("SELECT * FROM fn_pobierz_pracownikow()")
+            staff = db.get_employees()
         except:
             staff = pd.DataFrame()
 
-        # --- 1. LISTA PRACOWNIKÓW I USUWANIE ---
         st.markdown("### 1. Lista Pracowników")
         if not staff.empty:
             for _, r in staff.iterrows():
-                # Wyświetlamy w ładnych kolumnach
                 c1, c2, c3 = st.columns([3, 2, 1])
                 with c1:
                     st.write(f"**{r['imie']} {r['nazwisko']}**")
@@ -737,10 +576,9 @@ elif menu == "💼 Pracownicy (Admin)":
                 with c2:
                     st.write(f"Login: `{r['login']}`")
                 with c3:
-                    # Blokada usuwania samego siebie i admina
                     if str(r['id_pracownika']) != str(user_id) and r['login'] != 'admin':
                         if st.button("🗑️ Usuń", key=f"del_st_{r['id_pracownika']}"):
-                            delete_employee(r['id_pracownika'])
+                            db.delete_employee(r['id_pracownika'])
                             st.success("Usunięto.")
                             time.sleep(0.5)
                             st.rerun()
@@ -750,39 +588,33 @@ elif menu == "💼 Pracownicy (Admin)":
         else:
             st.warning("Brak pracowników w bazie.")
 
-        # --- 2. EDYCJA I DODAWANIE (Dwie kolumny) ---
         col_edit, col_add = st.columns(2)
 
-        # LEWA KOLUMNA: EDYCJA
         with col_edit:
             st.subheader("✏️ Edytuj Dane")
             with st.container(border=True):
                 if not staff.empty:
-                    # Tworzymy listę do wyboru: "Kowalski Jan (Sprzedawca)" -> ID
                     opts_emp = {f"{r['nazwisko']} {r['imie']} ({r['stanowisko']})": r['id_pracownika'] for _, r in
                                 staff.iterrows()}
                     sel_emp_label = st.selectbox("Wybierz pracownika do zmiany:", list(opts_emp.keys()))
 
                     if sel_emp_label:
                         emp_id_edit = opts_emp[sel_emp_label]
-                        # Pobieramy aktualne dane wybranego pracownika
                         curr_emp = staff[staff['id_pracownika'] == emp_id_edit].iloc[0]
 
                         with st.form("edit_emp_form"):
                             new_imie = st.text_input("Imię", value=curr_emp['imie'])
                             new_nazwisko = st.text_input("Nazwisko", value=curr_emp['nazwisko'])
-                            # Ustawiamy index selectboxa na obecne stanowisko
                             stanowiska = ["Sprzedawca", "Serwisant", "Menadżer"]
                             try:
                                 curr_idx = stanowiska.index(curr_emp['stanowisko'])
                             except ValueError:
                                 curr_idx = 0
                             new_stanowisko = st.selectbox("Stanowisko", stanowiska, index=curr_idx)
-
                             st.caption("Loginu i hasła nie można zmienić w tym panelu.")
 
                             if st.form_submit_button("💾 Zapisz zmiany"):
-                                ok, msg = update_employee(int(emp_id_edit), new_imie, new_nazwisko, new_stanowisko)
+                                ok, msg = db.update_employee(int(emp_id_edit), new_imie, new_nazwisko, new_stanowisko)
                                 if ok:
                                     st.success("Zaktualizowano dane pracownika!")
                                     time.sleep(1)
@@ -792,7 +624,6 @@ elif menu == "💼 Pracownicy (Admin)":
                 else:
                     st.info("Brak pracowników do edycji.")
 
-        # PRAWA KOLUMNA: DODAWANIE
         with col_add:
             st.subheader("➕ Dodaj Nowego")
             with st.container(border=True):
@@ -805,7 +636,7 @@ elif menu == "💼 Pracownicy (Admin)":
 
                     if st.form_submit_button("✅ Utwórz konto"):
                         if ei and en and el and ep:
-                            ok, m = add_employee(ei, en, es, el, ep)
+                            ok, m = db.add_employee(ei, en, es, el, ep)
                             if ok:
                                 st.success("Pracownik dodany!")
                                 time.sleep(1)

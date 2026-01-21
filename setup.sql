@@ -697,7 +697,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 ---------------------------------------------------------------------------------
--- !!! NOWE FUNKCJE POMOCNICZE DLA UI (Dla ujednolicenia kodu) !!!
+-- !!! FUNKCJE POMOCNICZE  !!!
 ---------------------------------------------------------------------------------
 
 -- A. Statystyki Pulpitu
@@ -721,7 +721,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- C. Pobierz Pojazdy do Alertów (POPRAWIONA KOLEJNOŚĆ KOLUMN)
+-- C. Pobierz Pojazdy do Alertów
 CREATE OR REPLACE FUNCTION fn_pobierz_pojazdy_alert(limit_km INT)
 RETURNS TABLE (Pojazd VARCHAR, Przebieg INT, Km_Do_Serwisu INT, Stan_Faktyczny VARCHAR, Status_KM TEXT) AS $$
 BEGIN
