@@ -531,7 +531,7 @@ elif menu == "👥 Klienci":
 
                 with col_del:
                     st.markdown("#### 🗑️ Usuń Klienta")
-                    st.warning("Uwaga: Usunięcie jest możliwe tylko, jeśli klient nie ma historii wypożyczeń.")
+                    st.warning("Uwaga: Usunięcie jest możliwe tylko, jeśli klient nie ma historii wypożyczeń w ciągu ostatniego roku.")
                     if st.button("Usuń trwale z bazy", type="primary"):
                         ok, msg = db.delete_client(int(sel_id))
                         if ok:
