@@ -77,6 +77,9 @@ def get_urgent_alerts(mileage_limit=15000):
     """Pobiera auta wymagające serwisu."""
     return run_query("SELECT * FROM fn_pobierz_pojazdy_alert(%s)", (mileage_limit,))
 
+def get_downtime_analysis(min_days=7):
+    """Pobiera analizę przestojów (auta stojące dłużej niż X dni)."""
+    return run_query("SELECT * FROM AnalizaPrzestojow(%s)", (min_days,))
 
 # --- KLIENCI ---
 

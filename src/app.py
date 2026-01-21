@@ -404,11 +404,39 @@ elif menu == "🚗 Flota & Rezerwacje":
                             st.error(m)
 
     with tab_analysis:
-        st.subheader("📊 Analizy")
-        fraza = st.text_input("Szukaj pojazdu (marka/rej)")
+        st.subheader("📊 Analizy Floty")
+
+        st.markdown("#### 🔍 Szukaj pojazdu")
+        fraza = st.text_input("Wpisz markę, model lub rejestrację:")
         if fraza:
             rs = db.search_vehicles(fraza)
-            st.dataframe(rs)
+            st.dataframe(rs, use_container_width=True)
+
+        st.markdown("---")
+
+        st.markdown("#### 💤 Analiza Przestojów ")
+        st.caption("Pokaż auta, które stały bezczynnie między wypożyczeniami dłużej niż:")
+
+        dni = st.slider("Minimalna liczba dni przestoju", 1, 30, 7)
+
+        if st.button("Analizuj przestoje"):
+            try:
+                df_down = db.get_downtime_analysis(dni)
+                if not df_down.empty:
+                    st.warning(f"Znaleziono {len(df_down)} przypadków długiego postoju.")
+                    st.dataframe(
+                        df_down,
+                        column_config={
+                            "dni_przestoju": st.column_config.NumberColumn("Dni bez pracy", format="%d dni 💤"),
+                            "data_zwrotu": "Od (Zwrot)",
+                            "data_nastepnego_odbioru": "Do (Nast. Odbiór)"
+                        },
+                        use_container_width=True
+                    )
+                else:
+                    st.success("Świetnie! Auta rotują bardzo sprawnie (brak długich przestojów).")
+            except Exception as e:
+                st.error(f"Błąd analizy: {e}")
 
 # ----------------- KLIENCI -----------------
 elif menu == "👥 Klienci":
