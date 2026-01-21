@@ -738,7 +738,14 @@ $$ LANGUAGE plpgsql;
 DROP FUNCTION IF EXISTS fn_pobierz_pojazdy_alert(INT);
 
 CREATE OR REPLACE FUNCTION fn_pobierz_pojazdy_alert(limit_km INT)
-RETURNS TABLE (Pojazd VARCHAR, Stan_Faktyczny VARCHAR, Przebieg INT, Km_Do_Serwisu INT, Szacowana_Data DATE, Status_KM TEXT) AS $$
+RETURNS TABLE (
+    Pojazd VARCHAR,
+    Stan_Faktyczny VARCHAR,  -- Brakowało tej kolumny
+    Przebieg INT,
+    Km_Do_Serwisu INT,
+    Szacowana_Data DATE,
+    Status_KM TEXT
+) AS $$
 BEGIN
     RETURN QUERY SELECT * FROM PrognozaSerwisowa(limit_km);
 END;
@@ -804,12 +811,3 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- C. Pobierz Pojazdy do Alertów
-DROP FUNCTION IF EXISTS fn_pobierz_pojazdy_alert(INT);
-
-CREATE OR REPLACE FUNCTION fn_pobierz_pojazdy_alert(limit_km INT)
-RETURNS TABLE (Pojazd VARCHAR, Przebieg INT, Km_Do_Serwisu INT, Szacowana_Data DATE, Status_KM TEXT) AS $$
-BEGIN
-    RETURN QUERY SELECT * FROM PrognozaSerwisowa(limit_km);
-END;
-$$ LANGUAGE plpgsql;
