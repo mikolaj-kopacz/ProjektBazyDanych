@@ -529,33 +529,35 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 3. Ranking Klientów VIP
+DROP FUNCTION IF EXISTS RankingKlientowVIP(INT) CASCADE;
+
 CREATE OR REPLACE FUNCTION RankingKlientowVIP(top_n INT)
-RETURNS JSON AS $$
-DECLARE
-    wynik JSON;
+RETURNS TABLE (
+    Pozycja INT,
+    Klient TEXT,
+    Ile_Rezerwacji BIGINT,
+    Wydano DECIMAL,
+    Status_VIP TEXT
+) AS $$
 BEGIN
-    SELECT json_agg(row_to_json(t))
-    INTO wynik
-    FROM (
-        SELECT
-            DENSE_RANK() OVER (ORDER BY SUM(p.Kwota_Calkowita) DESC)::INT as pozycja,
-            (k.Imie || ' ' || k.Nazwisko) as klient,
-            COUNT(rez.ID_Rezerwacji) as ile_rezerwacji,
-            COALESCE(SUM(p.Kwota_Calkowita), 0) as wydano,
-            CASE
-                WHEN SUM(p.Kwota_Calkowita) > 5000 THEN 'Platynowy'
-                WHEN SUM(p.Kwota_Calkowita) > 2000 THEN 'Złoty'
-                ELSE 'Srebrny'
-            END as status_vip
-        FROM Klienci k
-        JOIN Rezerwacje rez ON k.ID_Klienta = rez.ID_Klienta
-        JOIN Platnosci p ON rez.ID_Rezerwacji = p.ID_Rezerwacji
-        WHERE p.Status_Platnosci = 'Zrealizowana'
-        GROUP BY k.ID_Klienta
-        ORDER BY wydano DESC
-        LIMIT top_n
-    ) t;
-    RETURN COALESCE(wynik, '[]'::json);
+    RETURN QUERY
+    SELECT
+        DENSE_RANK() OVER (ORDER BY SUM(p.Kwota_Calkowita) DESC)::INT,
+        (k.Imie || ' ' || k.Nazwisko),
+        COUNT(rez.ID_Rezerwacji),
+        COALESCE(SUM(p.Kwota_Calkowita), 0),
+        CASE
+            WHEN SUM(p.Kwota_Calkowita) > 5000 THEN 'Platynowy'
+            WHEN SUM(p.Kwota_Calkowita) > 2000 THEN 'Złoty'
+            ELSE 'Srebrny'
+        END
+    FROM Klienci k
+    JOIN Rezerwacje rez ON k.ID_Klienta = rez.ID_Klienta
+    JOIN Platnosci p ON rez.ID_Rezerwacji = p.ID_Rezerwacji
+    WHERE p.Status_Platnosci = 'Zrealizowana'
+    GROUP BY k.ID_Klienta
+    ORDER BY 4 DESC
+    LIMIT top_n;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -734,22 +736,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- C. Pobierz Pojazdy do Alertów
-DROP FUNCTION IF EXISTS fn_pobierz_pojazdy_alert(INT);
 
-CREATE OR REPLACE FUNCTION fn_pobierz_pojazdy_alert(limit_km INT)
-RETURNS TABLE (
-    Pojazd VARCHAR,
-    Stan_Faktyczny VARCHAR,  -- Brakowało tej kolumny
-    Przebieg INT,
-    Km_Do_Serwisu INT,
-    Szacowana_Data DATE,
-    Status_KM TEXT
-) AS $$
-BEGIN
-    RETURN QUERY SELECT * FROM PrognozaSerwisowa(limit_km);
-END;
-$$ LANGUAGE plpgsql;
 
 -- 10. Szukaj Pojazdu
 CREATE OR REPLACE FUNCTION SzukajPojazdu(fraza TEXT)
@@ -811,3 +798,19 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+
+DROP FUNCTION IF EXISTS fn_pobierz_pojazdy_alert(INT);
+
+CREATE OR REPLACE FUNCTION fn_pobierz_pojazdy_alert(limit_km INT)
+RETURNS TABLE (
+    Pojazd VARCHAR,
+    Stan_Faktyczny VARCHAR,
+    Przebieg INT,
+    Km_Do_Serwisu INT,
+    Szacowana_Data DATE,
+    Status_KM TEXT
+) AS $$
+BEGIN
+    RETURN QUERY SELECT * FROM PrognozaSerwisowa(limit_km);
+END;
+$$ LANGUAGE plpgsql;
