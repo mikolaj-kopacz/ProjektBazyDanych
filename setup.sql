@@ -626,7 +626,8 @@ BEGIN
 
         Klient := rec.nazwa;
         Wydatki := rec.kwota;
-        RFM_Kod := v_r_score || v_f_score || v_m_score;
+
+        RFM_Kod := v_r_score::TEXT || v_f_score::TEXT || v_m_score::TEXT;
 
         IF v_m_score = 4 AND v_f_score >= 3 THEN Segment_Marketingowy := '💎 Absolutny Champion';
         ELSIF v_m_score >= 3 THEN Segment_Marketingowy := '💰 Wieloryb (Dużo wydaje)';
@@ -639,7 +640,6 @@ BEGIN
     END LOOP;
 END;
 $$ LANGUAGE plpgsql;
-
 -- 4. Analiza przestojów
 CREATE OR REPLACE FUNCTION AnalizaPrzestojow(min_dni_przerwy INT)
 RETURNS TABLE (Pojazd VARCHAR, Data_Zwrotu DATE, Data_Nastepnego_Odbioru DATE, Dni_Przestoju INT) AS $$
