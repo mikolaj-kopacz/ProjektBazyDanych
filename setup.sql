@@ -588,6 +588,7 @@ DECLARE
     v_max_wydatki DECIMAL;
     v_max_wizyty INT;
 BEGIN
+    -- Pobranie wartości maksymalnych do skalowania
     SELECT MAX(sum_wydatki), MAX(cnt_wizyty)
     INTO v_max_wydatki, v_max_wizyty
     FROM (
@@ -615,6 +616,7 @@ BEGIN
         ORDER BY kwota DESC
         LIMIT top_n
     LOOP
+        -- Obliczanie punktacji RFM
         v_m_score := CEIL((rec.kwota / v_max_wydatki) * 4);
         v_f_score := CEIL((rec.wizyty::DECIMAL / v_max_wizyty) * 4);
 
@@ -629,6 +631,7 @@ BEGIN
 
         RFM_Kod := v_r_score::TEXT || v_f_score::TEXT || v_m_score::TEXT;
 
+        -- Segmentacja
         IF v_m_score = 4 AND v_f_score >= 3 THEN Segment_Marketingowy := '💎 Absolutny Champion';
         ELSIF v_m_score >= 3 THEN Segment_Marketingowy := '💰 Wieloryb (Dużo wydaje)';
         ELSIF v_f_score >= 3 THEN Segment_Marketingowy := '🔄 Lojalny bywalec';
