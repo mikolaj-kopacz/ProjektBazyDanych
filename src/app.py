@@ -28,6 +28,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+
 # --- FUNKCJE POMOCNICZE (UI / PDF) ---
 
 def clean_text(text):
@@ -40,6 +41,7 @@ def clean_text(text):
     for k, v in replacements.items():
         text = text.replace(k, v)
     return text
+
 
 def create_pdf_confirmation(klient_info, auto_info, data_od, data_do, cena, pracownik):
     try:
@@ -71,6 +73,7 @@ def create_pdf_confirmation(klient_info, auto_info, data_od, data_do, cena, prac
     except Exception as e:
         print(f"Błąd PDF: {e}")
         return b""
+
 
 # --- LOGIKA SESJI ---
 if "logged_in" not in st.session_state:
@@ -154,14 +157,38 @@ if menu == "🏠 Pulpit":
     col_chart, col_alerts = st.columns([2, 1])
 
     with col_chart:
-        st.subheader("📊 Obłożenie")
+        st.subheader("📊 Obłożenie Floty")
+
+        now = datetime.date.today()
+        m_names = ["Cały Rok", "Styczeń", "Luty", "Marzec", "Kwiecień", "Maj", "Czerwiec",
+                   "Lipiec", "Sierpień", "Wrzesień", "Październik", "Listopad", "Grudzień"]
+
+        f1, f2 = st.columns([1, 2])
+        with f1:
+            sel_year = st.number_input("Rok", value=now.year, step=1, format="%d")
+        with f2:
+            sel_month_idx = now.month
+            sel_view = st.selectbox("Widok", m_names, index=sel_month_idx)
+
         try:
-            now = datetime.date.today()
-            df_chart = db.get_monthly_occupancy(now.year, now.month)
+            df_chart = db.get_yearly_occupancy(sel_year)
+
             if not df_chart.empty:
-                st.area_chart(df_chart.set_index("dzien")["liczba_aut"])
+                df_chart["dzien"] = pd.to_datetime(df_chart["dzien"])
+
+                if sel_view != "Cały Rok":
+                    month_num = m_names.index(sel_view)
+                    df_chart = df_chart[df_chart["dzien"].dt.month == month_num]
+
+                    if df_chart.empty:
+                        st.info(f"Brak danych dla: {sel_view} {sel_year}")
+                    else:
+                        st.area_chart(df_chart.set_index("dzien")["liczba_aut"], color="#0068c9")
+                else:
+                    st.area_chart(df_chart.set_index("dzien")["liczba_aut"], color="#0068c9")
             else:
-                st.info("Brak danych.")
+                st.warning(f"Brak danych w bazie dla roku {sel_year}.")
+
         except Exception as e:
             st.error(f"Błąd wykresu: {e}")
 
@@ -170,16 +197,14 @@ if menu == "🏠 Pulpit":
         try:
             df_serv = db.get_urgent_alerts(15000)
             if not df_serv.empty:
-                good_states = ["sprawny", "idealny", "bardzo dobry", "dobry", "nowy"]
-                urgent = df_serv[
-                    (df_serv["status_km"] != "✅ OK") |
-                    (~df_serv["stan_faktyczny"].str.lower().str.strip().isin(good_states))
-                    ]
-                if not urgent.empty:
-                    st.error(f"Auta do sprawdzenia: {len(urgent)}")
-                    st.dataframe(urgent[["pojazd", "stan_faktyczny", "status_km"]], hide_index=True)
-                else:
-                    st.success("Wszystko OK.")
+                st.error(f"Auta do sprawdzenia: {len(df_serv)}")
+                st.dataframe(
+                    df_serv[["pojazd", "problem", "priorytet"]],
+                    hide_index=True,
+                    use_container_width=True
+                )
+            else:
+                st.success("Wszystko OK. Brak pilnych spraw.")
         except Exception as e:
             st.error(f"Błąd alertów: {e}")
 
@@ -220,7 +245,6 @@ elif menu == "🚗 Flota & Rezerwacje":
                                         st.rerun()
                 except Exception as e:
                     st.error(str(e))
-
 
         elif st.session_state["reservation_step"] == "form":
             car = st.session_state["selected_car_data"]
@@ -303,54 +327,148 @@ elif menu == "🚗 Flota & Rezerwacje":
                 st.rerun()
 
     with tab_fleet:
-        st.subheader("🛠️ Zarządzanie Flotą")
+        st.subheader("🛠️ Centrum Zarządzania Flotą")
         try:
             all_cars = db.get_all_vehicles()
-        except:
+            if not all_cars.empty:
+                all_cars = all_cars.drop_duplicates(subset=['id_pojazdu'])
+        except Exception as e:
+            st.error(f"Błąd bazy: {e}")
             all_cars = pd.DataFrame()
 
-        st.markdown("#### 📋 Lista Wszystkich Pojazdów")
-        if not all_cars.empty:
-            st.dataframe(
-                all_cars[
-                    ["id_pojazdu", "marka", "model", "numer_rejestracyjny", "status_dostepnosci", "stan_techniczny",
-                     "przebieg"]],
-                use_container_width=True,
-                hide_index=True
-            )
+        if all_cars.empty:
+            st.info("Brak pojazdów.")
         else:
-            st.info("Brak pojazdów w bazie.")
+            # Filtrowanie
+            cars_service = all_cars[all_cars['status_dostepnosci'] == 'W serwisie']
+            cars_active = all_cars[all_cars['status_dostepnosci'] != 'W serwisie']
 
-        st.markdown("---")
+            # 1. SEKCJA AKTYWNA
+            st.markdown("### 🟢 Auta w eksploatacji")
+            for idx, car in cars_active.iterrows():
+                has_issue = car.get('wymaga_serwisu', False)
 
-        with st.container(border=True):
-            st.markdown("#### 🔧 Szybka Edycja Stanu")
-            if not all_cars.empty:
-                opts = {f"#{r['id_pojazdu']} {r['marka']} {r['model']}": r['id_pojazdu'] for i, r in
-                        all_cars.iterrows()}
-                sel = st.selectbox("Wybierz auto", list(opts.keys()))
-                if sel:
-                    cid = opts[sel]
-                    crow = all_cars[all_cars['id_pojazdu'] == cid].iloc[0]
-                    with st.form("status_car"):
-                        c1, c2, c3 = st.columns(3)
-                        nst = c1.selectbox("Status", ["Dostępny", "W serwisie", "Wypożyczony"],
-                                           index=["Dostępny", "W serwisie", "Wypożyczony"].index(
-                                               crow["status_dostepnosci"]))
-                        nkm = c2.number_input("Przebieg", value=int(crow["przebieg"]))
-                        ntxt = c3.text_input("Stan Techniczny", value=crow["stan_techniczny"])
-                        if st.form_submit_button("Zapisz"):
-                            ok, msg = db.update_vehicle_status(int(cid), int(nkm), ntxt, nst)
-                            if ok:
-                                st.success("Zapisano")
+                LIMIT_KM = 15000
+                przebieg_akt = int(car['przebieg'])
+                ost_serwis = int(car.get('ost_serwis_km', 0))
+                przejechane = przebieg_akt - ost_serwis
+                zostalo = LIMIT_KM - przejechane
+                procent_zuzycia = min(max(przejechane / LIMIT_KM, 0.0), 1.0)
+
+                if przejechane >= LIMIT_KM:
+                    progress_color = "red"
+                    service_status = f"⚠️ Wymiana wymagana! ({przejechane - LIMIT_KM} km po terminie)"
+                elif zostalo < 2000:
+                    progress_color = "orange"
+                    service_status = f"⏳ Zbliża się serwis (zostało {zostalo} km)"
+                else:
+                    progress_color = "green"
+                    service_status = f"✅ Olej OK (zostało {zostalo} km)"
+
+                header_icon = "⚠️" if has_issue or przejechane >= LIMIT_KM else "🚗"
+                header_text = f"{header_icon} {car['marka']} {car['model']} ({car['numer_rejestracyjny']})"
+
+                with st.expander(header_text, expanded=(has_issue or przejechane >= LIMIT_KM)):
+                    st.caption(
+                        f"📉 **Cykl serwisowy:** Przejechano {przejechane} km od ostatniego serwisu (Limit: {LIMIT_KM} km)")
+                    st.progress(procent_zuzycia)
+                    st.markdown(f"**Status:** {service_status}")
+
+                    st.markdown("---")
+
+                    c1, c2, c3 = st.columns([2, 2, 1.5])
+
+                    with c1:
+                        st.write(f"**Przebieg:** {car['przebieg']} km")
+                        st.write(f"**Klasa:** {car['nazwa_klasy']}")
+                        if has_issue:
+                            st.error(f"🚨 **ZGŁOSZONA USTERKA:** {car.get('opis_usterki', 'Brak opisu')}")
+
+                    with c2:
+                        st.markdown("**Aktualizacja przebiegu**")
+                        new_km = st.number_input("Nowy przebieg", value=int(car['przebieg']),
+                                                 key=f"km_{car['id_pojazdu']}_{idx}")
+                        if st.button("Zapisz km", key=f"s_{car['id_pojazdu']}_{idx}"):
+                            db.update_vehicle_status(car['id_pojazdu'], new_km, car['stan_techniczny'],
+                                                     car['status_dostepnosci'])
+                            st.toast("Zapisano przebieg!")
+                            time.sleep(0.5)
+                            st.rerun()
+
+                    with c3:
+                        st.markdown("**Akcje**")
+
+                        if st.button("🛢️ Potwierdź Przegląd", key=f"oil_{car['id_pojazdu']}_{idx}",
+                                     help="Zresetuj licznik kilometrów"):
+                            db.add_service_entry(
+                                int(car['id_pojazdu']),
+                                datetime.date.today(),
+                                "Wymiana oleju / Przegląd",
+                                500.0,
+                                int(new_km)
+                            )
+                            st.success("Zresetowano licznik!")
+                            time.sleep(1)
+                            st.rerun()
+
+                        if has_issue:
+                            if st.button("Wyślij do warsztatu", key=f"send_{car['id_pojazdu']}_{idx}", type="primary"):
+                                db.update_vehicle_status(
+                                    car['id_pojazdu'], car['przebieg'], "Wymaga naprawy", "W serwisie",
+                                    wymaga_serwisu=True, opis_usterki=car['opis_usterki']
+                                )
+                                st.rerun()
+                        else:
+                            usterka_input = st.text_input("Zgłoś usterkę", key=f"u_in_{car['id_pojazdu']}_{idx}",
+                                                          placeholder="Np. stuki w silniku")
+                            if st.button("🚩 Zgłoś", key=f"rep_{car['id_pojazdu']}_{idx}"):
+                                if usterka_input:
+                                    db.update_vehicle_status(
+                                        car['id_pojazdu'], car['przebieg'], "Zgłoszono usterkę",
+                                        car['status_dostepnosci'],
+                                        wymaga_serwisu=True, opis_usterki=usterka_input
+                                    )
+                                    st.success("Zgłoszono!")
+                                    time.sleep(0.5)
+                                    st.rerun()
+
+            st.markdown("---")
+
+            # 2. SEKCJA SERWISOWA
+            st.markdown("### 🔴 Warsztat (Auta w naprawie)")
+            if cars_service.empty:
+                st.caption("Warsztat jest pusty. Wszystkie auta sprawne!")
+            else:
+                for idx, car in cars_service.iterrows():
+                    with st.container(border=True):
+                        cols = st.columns([3, 1])
+                        with cols[0]:
+                            st.markdown(f"#### 🔧 {car['marka']} {car['model']} ({car['numer_rejestracyjny']})")
+                            st.error(f"Powód naprawy: **{car.get('opis_usterki', 'Brak opisu')}**")
+                        with cols[1]:
+                            if st.button("✅ Naprawione", key=f"fix_{car['id_pojazdu']}_{idx}"):
+                                db.add_service_entry(
+                                    int(car['id_pojazdu']),
+                                    datetime.date.today(),
+                                    "Naprawa usterki",
+                                    0.0,
+                                    int(car['przebieg'])
+                                )
+                                db.update_vehicle_status(
+                                    car['id_pojazdu'], car['przebieg'], "Idealny", "Dostępny",
+                                    wymaga_serwisu=False, opis_usterki=""
+                                )
+                                st.balloons()
                                 time.sleep(1)
                                 st.rerun()
-                            else:
-                                st.error(msg)
 
+        # LOGIKA MENADŻERA
         if user_role == "Menadżer":
-            st.markdown("#### ⚡ Opcje Menadżera")
-            mt1, mt2, mt3 = st.tabs(["Dodaj", "Usuń", "Serwis"])
+            st.markdown("---")
+            st.markdown("#### ⚡ Panel Menadżera")
+
+            mt1, mt2, mt3 = st.tabs(["➕ Dodaj Samochód", "✏️ Edytuj Auto", "🗑️ Usuń Samochód"])
+
             with mt1:
                 with st.form("new_car"):
                     clss = db.get_vehicle_classes()
@@ -363,41 +481,66 @@ elif menu == "🚗 Flota & Rezerwacje":
                         ro = c1.number_input("Rok", 2000, 2030, 2023)
                         nr = c2.text_input("Rejestracja")
                         km = c1.number_input("Przebieg", 0)
-                        stt = c2.text_input("Stan", "Sprawny")
-                        if st.form_submit_button("Dodaj"):
-                            ok, m = db.add_vehicle(copt[sc], ma, mo, ro, nr, km, stt, "Dostępny")
+
+                        if st.form_submit_button("Dodaj do floty"):
+                            ok, m = db.add_vehicle(copt[sc], ma, mo, ro, nr, km, "Idealny", "Dostępny")
                             if ok:
-                                st.success("Dodano")
+                                st.success("Dodano nowe auto!")
                                 time.sleep(1)
                                 st.rerun()
                             else:
                                 st.error(m)
+
             with mt2:
                 if not all_cars.empty:
-                    tod = st.selectbox("Usuń auto", list(opts.keys()), key="del_c")
-                    if st.button("Usuń trwale"):
+                    opts_edit = {
+                        f"#{r['id_pojazdu']} {r['marka']} {r['model']} ({r['numer_rejestracyjny']})": r['id_pojazdu']
+                        for i, r in all_cars.iterrows()}
+                    sel_edit = st.selectbox("Wybierz auto do edycji", list(opts_edit.keys()), key="sel_edit_car")
+
+                    if sel_edit:
+                        car_id = opts_edit[sel_edit]
+                        curr_car = all_cars[all_cars['id_pojazdu'] == car_id].iloc[0]
+
+                        st.info("💡 Edytujesz dane techniczne pojazdu.")
+
+                        with st.form("edit_car_full"):
+                            clss = db.get_vehicle_classes()
+                            copt = {f"{r['nazwa_klasy']}": r['id_klasy'] for i, r in clss.iterrows()}
+
+                            new_class_name = st.selectbox("Klasa", list(copt.keys()), key="ed_cls")
+                            new_class_id = copt[new_class_name]
+
+                            ec1, ec2 = st.columns(2)
+                            e_marka = ec1.text_input("Marka", value=curr_car['marka'])
+                            e_model = ec2.text_input("Model", value=curr_car['model'])
+                            e_rok = ec1.number_input("Rok Produkcji", 1990, 2030, int(curr_car['rok_produkcji']))
+                            e_rej = ec2.text_input("Nr Rejestracyjny", value=curr_car['numer_rejestracyjny'])
+                            e_przebieg = ec1.number_input("Przebieg", 0, 1000000, int(curr_car['przebieg']))
+                            e_stan = ec2.text_input("Opis Stanu", value=curr_car['stan_techniczny'])
+
+                            if st.form_submit_button("💾 Zapisz zmiany w pojeździe"):
+                                ok, m = db.update_vehicle_full_details(
+                                    car_id, new_class_id, e_marka, e_model, e_rok, e_rej, e_przebieg, e_stan
+                                )
+                                if ok:
+                                    st.success("Dane pojazdu zaktualizowane!")
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error(f"Błąd edycji: {m}")
+                else:
+                    st.warning("Brak aut do edycji.")
+
+            with mt3:
+                if not all_cars.empty:
+                    opts = {f"#{r['id_pojazdu']} {r['marka']} {r['model']}": r['id_pojazdu'] for i, r in
+                            all_cars.iterrows()}
+                    tod = st.selectbox("Wybierz auto do usunięcia", list(opts.keys()), key="del_c_manager")
+                    if st.button("Usuń trwale", key="btn_del_manager"):
                         ok, m = db.delete_vehicle(opts[tod])
                         if ok:
                             st.success("Usunięto")
-                            time.sleep(1)
-                            st.rerun()
-                        else:
-                            st.error(m)
-            with mt3:
-                with st.form("serv_f"):
-                    scs = st.selectbox("Auto", list(opts.keys()), key="srv_c")
-                    dt = st.date_input("Data", datetime.date.today())
-                    cost = st.number_input("Koszt", 0.0)
-                    desc = st.text_input("Opis")
-                    done = st.checkbox("Naprawa zakończona? (Zmień na 'Sprawny')")
-                    if st.form_submit_button("Rejestruj"):
-                        ok, m = db.add_service_entry(opts[scs], dt, desc, cost, 0)
-                        if ok:
-                            if done:
-                                db.update_vehicle_status(opts[scs], int(
-                                    all_cars[all_cars['id_pojazdu'] == opts[scs]].iloc[0]['przebieg']), "Sprawny",
-                                                      "Dostępny")
-                            st.success("Dodano wpis")
                             time.sleep(1)
                             st.rerun()
                         else:
@@ -531,7 +674,8 @@ elif menu == "👥 Klienci":
 
                 with col_del:
                     st.markdown("#### 🗑️ Usuń Klienta")
-                    st.warning("Uwaga: Usunięcie jest możliwe tylko, jeśli klient nie ma historii wypożyczeń w ciągu ostatniego roku.")
+                    st.warning(
+                        "Uwaga: Usunięcie jest możliwe tylko, jeśli klient nie ma historii wypożyczeń w ciągu ostatniego roku.")
                     if st.button("Usuń trwale z bazy", type="primary"):
                         ok, msg = db.delete_client(int(sel_id))
                         if ok:
@@ -556,22 +700,28 @@ elif menu == "👥 Klienci":
             try:
                 st.dataframe(db.get_vip_ranking(5), hide_index=True)
             except Exception as e:
-                st.error(str(e))
+                st.error(f"Błąd SQL (CRM): {e}")
 
 # ----------------- FINANSE -----------------
 elif menu == "💰 Finanse":
     st.title("💰 Raporty Finansowe")
-    rok = st.selectbox("Rok", [2023, 2024, 2025, 2026], index=3)
+    rok = st.selectbox("Rok", [2023, 2024, 2025, 2026], index=2)
     try:
         df_fin = db.get_revenue_report(rok)
         if not df_fin.empty:
-            c1, c2 = st.columns([1, 2])
-            c1.dataframe(df_fin[["miesiac", "razem", "narastajaco"]], use_container_width=True)
-            c2.bar_chart(df_fin.set_index("miesiac")["razem"])
+            st.markdown(f"### Wyniki za rok {rok}")
+
+            st.dataframe(
+                df_fin[["miesiac", "przychod", "zmiana_procentowa", "udzial_w_roku"]],
+                use_container_width=True
+            )
+
+            st.markdown("#### 📈 Wykres przychodów (Miesięcznie)")
+            st.bar_chart(df_fin.set_index("miesiac")["przychod"])
         else:
-            st.warning("Brak danych.")
+            st.warning("Brak danych finansowych dla wybranego roku.")
     except Exception as e:
-        st.error(f"Błąd: {e}")
+        st.error(f"Błąd generowania raportu: {e}")
 
 # ----------------- PRACOWNICY -----------------
 elif menu == "💼 Pracownicy (Admin)":

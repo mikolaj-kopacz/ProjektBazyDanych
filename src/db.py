@@ -26,7 +26,6 @@ def get_connection():
 
 
 def run_query(query, params=None):
-    """Wykonuje zapytanie SELECT i zwraca DataFrame."""
     conn = get_connection()
     try:
         df = pd.read_sql(query, conn, params=params)
@@ -36,7 +35,6 @@ def run_query(query, params=None):
 
 
 def run_command(command, params=None):
-    """Wykonuje zapytanie INSERT/UPDATE/DELETE/CALL."""
     conn = get_connection()
     cur = conn.cursor()
     try:
@@ -64,27 +62,22 @@ def check_login(username, password):
 # --- PULPIT (STATYSTYKI) ---
 
 def get_dashboard_stats():
-    """Pobiera statystyki na pulpit: liczba aut, klientów, rezerwacji."""
     return run_query("SELECT * FROM fn_statystyki_pulpit()")
 
 
-def get_monthly_occupancy(year, month):
-    """Pobiera dane do wykresu obłożenia."""
-    return run_query("SELECT * FROM OblozenieMiesieczne(%s, %s)", (year, month))
+def get_yearly_occupancy(year):
+    return run_query("SELECT * FROM OblozenieRoczne(%s)", (year,))
 
 
 def get_urgent_alerts(mileage_limit=15000):
-    """Pobiera auta wymagające serwisu."""
     return run_query("SELECT * FROM fn_pobierz_pojazdy_alert(%s)", (mileage_limit,))
 
 def get_downtime_analysis(min_days=7):
-    """Pobiera analizę przestojów (auta stojące dłużej niż X dni)."""
     return run_query("SELECT * FROM AnalizaPrzestojow(%s)", (min_days,))
 
 # --- KLIENCI ---
 
 def get_all_clients():
-    """Pobiera listę wszystkich klientów."""
     return run_query("SELECT * FROM fn_pobierz_klientow()")
 
 
@@ -142,8 +135,19 @@ def get_vip_ranking(limit=5):
 # --- POJAZDY I FLOTA ---
 
 def get_all_vehicles():
-    """Pobiera pełną listę pojazdów."""
-    return run_query("SELECT * FROM fn_pobierz_pojazdy()")
+    return run_query("""
+        SELECT 
+            p.ID_Pojazdu, p.ID_Klasy, p.Marka, p.Model, p.Rok_Produkcji, 
+            p.Numer_Rejestracyjny, p.Przebieg, p.Stan_Techniczny, 
+            p.Status_Dostepnosci, p.Wymaga_Serwisu, p.Opis_Usterki,
+            kp.Nazwa_Klasy, kp.Cena_Za_Dobe,
+            COALESCE(MAX(s.Przebieg_W_Chwili_Serwisu), 0) as ost_serwis_km
+        FROM Pojazdy p
+        JOIN Klasy_Pojazdow kp ON p.ID_Klasy = kp.ID_Klasy
+        LEFT JOIN Serwisy s ON p.ID_Pojazdu = s.ID_Pojazdu
+        GROUP BY p.ID_Pojazdu, kp.Nazwa_Klasy, kp.Cena_Za_Dobe
+        ORDER BY p.ID_Pojazdu DESC;
+    """)
 
 
 def get_vehicle_classes():
@@ -151,12 +155,10 @@ def get_vehicle_classes():
 
 
 def search_vehicles(phrase):
-    """Wyszukuje pojazdy po frazie."""
     return run_query("SELECT * FROM SzukajPojazdu(%s)", (phrase,))
 
 
 def find_available_vehicles(date_from, date_to):
-    """Szuka aut dostępnych w zadanym terminie."""
     return run_query("SELECT * FROM ZnajdzDostepnePojazdy(%s, %s, NULL)", (date_from, date_to))
 
 
@@ -165,9 +167,11 @@ def add_vehicle(id_klasy, marka, model, rok, nr_rej, przebieg, stan, status):
                        (id_klasy, marka, model, rok, nr_rej, przebieg, stan, status))
 
 
-def update_vehicle_status(id_pojazdu, przebieg, stan, status):
-    return run_command("CALL sp_aktualizuj_pojazd(%s, NULL, NULL, NULL, NULL, NULL, %s, %s, %s);",
-                       (id_pojazdu, przebieg, stan, status))
+def update_vehicle_status(id_pojazdu, przebieg, stan, status, wymaga_serwisu=None, opis_usterki=None):
+    return run_command(
+        "CALL sp_aktualizuj_pojazd(%s, NULL, NULL, NULL, NULL, NULL, %s, %s, %s, %s, %s);",
+        (id_pojazdu, przebieg, stan, status, wymaga_serwisu, opis_usterki)
+    )
 
 
 def delete_vehicle(id_pojazdu):
@@ -180,14 +184,32 @@ def delete_vehicle(id_pojazdu):
 def add_service_entry(id_pojazdu, data, opis, koszt, przebieg):
     return run_command("CALL sp_dodaj_serwis(%s, %s, %s, %s, %s);", (id_pojazdu, data, opis, koszt, przebieg))
 
+def update_vehicle_full_details(id_pojazdu, id_klasy, marka, model, rok, nr_rej, przebieg, stan):
+    return run_command(
+        """
+        CALL sp_aktualizuj_pojazd(
+            %s,  -- p_id
+            %s,  -- p_id_klasy
+            %s,  -- p_marka
+            %s,  -- p_model
+            %s,  -- p_rok
+            %s,  -- p_nr_rej
+            %s,  -- p_przebieg
+            %s,  -- p_stan
+            NULL, -- p_status 
+            NULL, -- p_wymaga_serwisu 
+            NULL  -- p_opis_usterki
+        );
+        """,
+        (id_pojazdu, id_klasy, marka, model, rok, nr_rej, przebieg, stan)
+    )
+
 
 # --- REZERWACJE ---
 
 def add_reservation(id_klienta, id_pojazdu, id_pracownika, data_start, data_end, cena):
-    """Dodaje rezerwację wywołując procedurę."""
     import datetime
     today = datetime.date.today()
-
 
     return run_command(
         "CALL sp_dodaj_rezerwacje(%s, %s, %s, %s, %s, %s, %s, %s, %s);",
@@ -195,9 +217,9 @@ def add_reservation(id_klienta, id_pojazdu, id_pracownika, data_start, data_end,
             id_klienta,
             id_pojazdu,
             id_pracownika,
-            today,  # Data rezerwacji (dzisiaj)
-            data_start,  # Data od
-            data_end,  # Data do
+            today,
+            data_start,
+            data_end,
             "Siedziba",
             float(cena),
             "Potwierdzona"

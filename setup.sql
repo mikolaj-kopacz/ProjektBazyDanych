@@ -48,6 +48,7 @@ DROP FUNCTION IF EXISTS RankingKlientowVIP CASCADE;
 DROP FUNCTION IF EXISTS AnalizaPrzestojow CASCADE;
 DROP FUNCTION IF EXISTS PobierzHistorieKlientaJSON CASCADE;
 DROP FUNCTION IF EXISTS OblozenieMiesieczne CASCADE;
+DROP FUNCTION IF EXISTS OblozenieRoczne CASCADE;
 DROP FUNCTION IF EXISTS EfektywnoscPracownikow CASCADE;
 DROP FUNCTION IF EXISTS StatusKlientow CASCADE;
 DROP FUNCTION IF EXISTS PrognozaSerwisowa CASCADE;
@@ -107,7 +108,10 @@ CREATE TABLE Pojazdy (
     Numer_Rejestracyjny VARCHAR(20) UNIQUE NOT NULL,
     Przebieg INT,
     Stan_Techniczny VARCHAR(50),
-    Status_Dostepnosci VARCHAR(20) CHECK (Status_Dostepnosci IN ('Dostępny', 'Wypożyczony', 'W serwisie'))
+    Status_Dostepnosci VARCHAR(20) CHECK (Status_Dostepnosci IN ('Dostępny', 'Wypożyczony', 'W serwisie')),
+    -- NOWE POLA:
+    Wymaga_Serwisu BOOLEAN DEFAULT FALSE,
+    Opis_Usterki TEXT DEFAULT NULL
 );
 
 CREATE TABLE Rezerwacje (
@@ -349,19 +353,20 @@ BEGIN
 END;
 $$;
 
--- === 4. POJAZDY ===
+-- === 4. POJAZDY (ZAKTUALIZOWANE O NOWE POLA) ===
 
 CREATE OR REPLACE PROCEDURE sp_dodaj_pojazd(
     p_id_klasy INT, p_marka VARCHAR, p_model VARCHAR, p_rok INT,
-    p_nr_rej VARCHAR, p_przebieg INT, p_stan VARCHAR, p_status VARCHAR
+    p_nr_rej VARCHAR, p_przebieg INT, p_stan VARCHAR, p_status VARCHAR,
+    p_wymaga_serwisu BOOLEAN DEFAULT FALSE, p_opis_usterki VARCHAR DEFAULT NULL
 ) LANGUAGE plpgsql AS $$
 BEGIN
     IF EXISTS (SELECT 1 FROM Pojazdy WHERE Numer_Rejestracyjny = p_nr_rej) THEN
         RAISE EXCEPTION 'Błąd: Pojazd o numerze rejestracyjnym % już istnieje!', p_nr_rej;
     END IF;
 
-    INSERT INTO Pojazdy (ID_Klasy, Marka, Model, Rok_Produkcji, Numer_Rejestracyjny, Przebieg, Stan_Techniczny, Status_Dostepnosci)
-    VALUES (p_id_klasy, p_marka, p_model, p_rok, p_nr_rej, p_przebieg, p_stan, p_status);
+    INSERT INTO Pojazdy (ID_Klasy, Marka, Model, Rok_Produkcji, Numer_Rejestracyjny, Przebieg, Stan_Techniczny, Status_Dostepnosci, Wymaga_Serwisu, Opis_Usterki)
+    VALUES (p_id_klasy, p_marka, p_model, p_rok, p_nr_rej, p_przebieg, p_stan, p_status, p_wymaga_serwisu, p_opis_usterki);
 END;
 $$;
 
@@ -374,7 +379,8 @@ $$;
 
 CREATE OR REPLACE PROCEDURE sp_aktualizuj_pojazd(
     p_id INT, p_id_klasy INT, p_marka VARCHAR, p_model VARCHAR, p_rok INT,
-    p_nr_rej VARCHAR, p_przebieg INT, p_stan VARCHAR, p_status VARCHAR
+    p_nr_rej VARCHAR, p_przebieg INT, p_stan VARCHAR, p_status VARCHAR,
+    p_wymaga_serwisu BOOLEAN, p_opis_usterki VARCHAR
 ) LANGUAGE plpgsql AS $$
 BEGIN
     UPDATE Pojazdy
@@ -385,7 +391,9 @@ BEGIN
         Numer_Rejestracyjny = COALESCE(p_nr_rej, Numer_Rejestracyjny),
         Przebieg = COALESCE(p_przebieg, Przebieg),
         Stan_Techniczny = COALESCE(p_stan, Stan_Techniczny),
-        Status_Dostepnosci = COALESCE(p_status, Status_Dostepnosci)
+        Status_Dostepnosci = COALESCE(p_status, Status_Dostepnosci),
+        Wymaga_Serwisu = COALESCE(p_wymaga_serwisu, Wymaga_Serwisu),
+        Opis_Usterki = COALESCE(p_opis_usterki, Opis_Usterki)
     WHERE ID_Pojazdu = p_id;
 END;
 $$;
@@ -407,7 +415,19 @@ CREATE OR REPLACE PROCEDURE sp_dodaj_rezerwacje(
     p_data_rez DATE, p_data_odb DATE, p_data_zwr DATE,
     p_miejsce VARCHAR, p_cena DECIMAL, p_status VARCHAR
 ) LANGUAGE plpgsql AS $$
+DECLARE
+    v_wymaga_serwisu BOOLEAN;
+    v_opis_usterki TEXT;
 BEGIN
+    -- 1. Sprawdzenie bezpieczeństwa (Czy auto nie ma zgłoszonej usterki?)
+    SELECT Wymaga_Serwisu, Opis_Usterki INTO v_wymaga_serwisu, v_opis_usterki
+    FROM Pojazdy WHERE ID_Pojazdu = p_id_pojazdu;
+
+    IF v_wymaga_serwisu THEN
+        RAISE EXCEPTION 'BŁĄD: Nie można wydać pojazdu! Zgłoszona usterka: %', v_opis_usterki;
+    END IF;
+
+    -- 2. Standardowe dodanie rezerwacji
     INSERT INTO Rezerwacje (ID_Klienta, ID_Pojazdu, ID_Pracownika, Data_Rezerwacji, Data_Odbioru, Data_Zwrotu, Miejsce_Odbioru, Cena_Calkowita, Status_Rezerwacji)
     VALUES (p_id_klienta, p_id_pojazdu, p_id_pracownika, p_data_rez, p_data_odb, p_data_zwr, p_miejsce, p_cena, p_status);
 END;
@@ -478,7 +498,7 @@ END;
 $$;
 
 ---------------------------------------------------------------------------------
--- 4. -----ZAPYTANIA I RAPORTY-----
+-- 4. -----ZAPYTANIA I RAPORTY (Wersja Zaawansowana)-----
 ---------------------------------------------------------------------------------
 
 -- 1. Wyszukiwanie dostępnych pojazdów
@@ -492,6 +512,7 @@ BEGIN
     FROM Pojazdy p
     JOIN Klasy_Pojazdow kp ON p.ID_Klasy = kp.ID_Klasy
     WHERE p.Status_Dostepnosci != 'W serwisie'
+      AND p.Wymaga_Serwisu = FALSE -- <--- NOWE ZABEZPIECZENIE (Ukrywa zgłoszone usterki)
       AND (p_klasa_id IS NULL OR p.ID_Klasy = p_klasa_id)
       AND NOT EXISTS (
           SELECT 1 FROM Rezerwacje r
@@ -502,61 +523,93 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 2. Raport finansowy
+-- 2. Raport finansowy (ZAAWANSOWANY: Trend MoM + Growth Rate)
 CREATE OR REPLACE FUNCTION RaportPrzychodow(p_rok INT)
-RETURNS TABLE (Miesiac TEXT, Gotowka DECIMAL, Karta DECIMAL, Przelew DECIMAL, Razem DECIMAL, Narastajaco DECIMAL) AS $$
+RETURNS TABLE (
+    Miesiac TEXT,
+    Przychod DECIMAL,
+    Poprzedni_Miesiac DECIMAL,
+    Zmiana_Procentowa TEXT,
+    Udzial_W_Roku TEXT
+) AS $$
 BEGIN
     RETURN QUERY
-    WITH DaneMiesieczne AS (
+    WITH Miesieczne AS (
         SELECT
-            EXTRACT(MONTH FROM Data_Platnosci)::INT AS m_num,
-            SUM(Kwota_Calkowita) FILTER (WHERE Forma_Platnosci = 'Gotówka') AS g,
-            SUM(Kwota_Calkowita) FILTER (WHERE Forma_Platnosci = 'Karta') AS k,
-            SUM(Kwota_Calkowita) FILTER (WHERE Forma_Platnosci = 'Przelew') AS p,
-            SUM(Kwota_Calkowita) AS total
+            EXTRACT(MONTH FROM Data_Platnosci)::INT as m_num,
+            SUM(Kwota_Calkowita) as total
         FROM Platnosci
         WHERE EXTRACT(YEAR FROM Data_Platnosci) = p_rok
           AND Status_Platnosci = 'Zrealizowana'
-        GROUP BY ROLLUP(EXTRACT(MONTH FROM Data_Platnosci))
+        GROUP BY 1
+    ),
+    Analiza AS (
+        SELECT
+            m_num,
+            total,
+            LAG(total) OVER (ORDER BY m_num) as prev_total, -- Funkcja okna: poprzedni wiersz
+            SUM(total) OVER () as roczna_suma             -- Funkcja okna: suma całego roku
+        FROM Miesieczne
     )
     SELECT
-        COALESCE(TO_CHAR(MAKE_DATE(p_rok, m_num, 1), 'MM - Month'), '--- RAZEM ROK ---'),
-        COALESCE(g, 0), COALESCE(k, 0), COALESCE(p, 0), COALESCE(total, 0),
-        SUM(COALESCE(total, 0)) OVER (ORDER BY m_num NULLS LAST)
-    FROM DaneMiesieczne
-    ORDER BY m_num NULLS LAST;
+        TO_CHAR(MAKE_DATE(p_rok, m_num, 1), 'Month'),
+        total,
+        COALESCE(prev_total, 0),
+        CASE
+            WHEN prev_total IS NULL THEN '---'
+            WHEN prev_total = 0 THEN '100%'
+            ELSE ROUND(((total - prev_total) / prev_total * 100), 1) || '%'
+        END,
+        ROUND((total / roczna_suma * 100), 1) || '%'
+    FROM Analiza
+    ORDER BY m_num;
 END;
 $$ LANGUAGE plpgsql;
 
 -- 3. Ranking Klientów VIP
-DROP FUNCTION IF EXISTS RankingKlientowVIP(INT) CASCADE;
-
 CREATE OR REPLACE FUNCTION RankingKlientowVIP(top_n INT)
 RETURNS TABLE (
-    Pozycja INT,
     Klient TEXT,
-    Ile_Rezerwacji BIGINT,
-    Wydano DECIMAL,
-    Status_VIP TEXT
+    Wydatki DECIMAL,
+    RFM_Kod TEXT,
+    Segment_Marketingowy TEXT
 ) AS $$
 BEGIN
     RETURN QUERY
+    WITH Metryki AS (
+        SELECT
+            k.ID_Klienta,
+            (k.Imie || ' ' || k.Nazwisko)::TEXT as klient_nazwa,
+            MAX(r.Data_Rezerwacji) as ostatnia_wizyta,
+            COUNT(r.ID_Rezerwacji) as czestotliwosc,
+            SUM(p.Kwota_Calkowita) as wydatki_sum
+        FROM Klienci k
+        JOIN Rezerwacje r ON k.ID_Klienta = r.ID_Klienta
+        JOIN Platnosci p ON r.ID_Rezerwacji = p.ID_Rezerwacji
+        WHERE p.Status_Platnosci = 'Zrealizowana'
+        GROUP BY k.ID_Klienta
+    ),
+    Scoring AS (
+        SELECT *,
+            NTILE(4) OVER (ORDER BY ostatnia_wizyta ASC) as R_Score,
+            NTILE(4) OVER (ORDER BY czestotliwosc ASC) as F_Score,
+            NTILE(4) OVER (ORDER BY wydatki_sum ASC) as M_Score
+        FROM Metryki
+    )
     SELECT
-        DENSE_RANK() OVER (ORDER BY SUM(p.Kwota_Calkowita) DESC)::INT,
-        (k.Imie || ' ' || k.Nazwisko),
-        COUNT(rez.ID_Rezerwacji),
-        COALESCE(SUM(p.Kwota_Calkowita), 0),
+        s.klient_nazwa,
+        s.wydatki_sum,
+        -- Naprawa błędu integer || integer (rzutowanie na tekst)
+        (s.R_Score::TEXT || s.F_Score::TEXT || s.M_Score::TEXT) as rfm_kod,
         CASE
-            WHEN SUM(p.Kwota_Calkowita) > 5000 THEN 'Platynowy'
-            WHEN SUM(p.Kwota_Calkowita) > 2000 THEN 'Złoty'
-            ELSE 'Srebrny'
-        END
-    FROM Klienci k
-    JOIN Rezerwacje rez ON k.ID_Klienta = rez.ID_Klienta
-    JOIN Platnosci p ON rez.ID_Rezerwacji = p.ID_Rezerwacji
-    WHERE p.Status_Platnosci = 'Zrealizowana'
-    GROUP BY k.ID_Klienta
-    ORDER BY 4 DESC
+            WHEN s.R_Score = 4 AND s.F_Score = 4 AND s.M_Score = 4 THEN '💎 Absolutny Champion'
+            WHEN s.M_Score = 4 THEN '💰 Wieloryb (Dużo wydaje)'
+            WHEN s.F_Score = 4 THEN '🔄 Lojalny bywalec'
+            WHEN s.R_Score = 1 THEN '💤 Ryzyko odejścia'
+            ELSE '🙂 Standardowy'
+        END::TEXT as segment
+    FROM Scoring s
+    ORDER BY s.wydatki_sum DESC
     LIMIT top_n;
 END;
 $$ LANGUAGE plpgsql;
@@ -613,25 +666,24 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 6. Obłożenie Miesięczne
-CREATE OR REPLACE FUNCTION OblozenieMiesieczne(p_rok INT, p_miesiac INT)
+-- 6. Obłożenie Roczne
+CREATE OR REPLACE FUNCTION OblozenieRoczne(p_rok INT)
 RETURNS TABLE (Dzien DATE, Liczba_Aut INT) AS $$
-DECLARE
-    v_dzien DATE;
-    v_koniec DATE;
 BEGIN
-    v_dzien := MAKE_DATE(p_rok, p_miesiac, 1);
-    v_koniec := (v_dzien + INTERVAL '1 month' - INTERVAL '1 day')::DATE;
-
-    WHILE v_dzien <= v_koniec LOOP
-        Dzien := v_dzien;
-        SELECT COUNT(*) INTO Liczba_Aut
-        FROM Rezerwacje
-        WHERE Status_Rezerwacji != 'Anulowana'
-          AND v_dzien BETWEEN Data_Odbioru AND Data_Zwrotu;
-        RETURN NEXT;
-        v_dzien := v_dzien + 1;
-    END LOOP;
+    RETURN QUERY
+    SELECT
+        kalendarz.data::DATE,
+        COUNT(r.ID_Rezerwacji)::INT
+    FROM generate_series(
+        MAKE_DATE(p_rok, 1, 1),
+        MAKE_DATE(p_rok, 12, 31),
+        INTERVAL '1 day'
+    ) AS kalendarz(data)
+    LEFT JOIN Rezerwacje r ON
+        r.Status_Rezerwacji != 'Anulowana'
+        AND kalendarz.data BETWEEN r.Data_Odbioru AND r.Data_Zwrotu
+    GROUP BY kalendarz.data
+    ORDER BY kalendarz.data;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -689,54 +741,53 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 9. Prognoza Serwisowa
-DROP FUNCTION IF EXISTS PrognozaSerwisowa(INT) CASCADE;
-
+-- 9. Prognoza Serwisowa (ZAAWANSOWANA: Używa flagi Wymaga_Serwisu)
 CREATE OR REPLACE FUNCTION PrognozaSerwisowa(limit_km_serwisu INT DEFAULT 15000)
-RETURNS TABLE (Pojazd VARCHAR, Stan_Faktyczny VARCHAR, Przebieg INT, Km_Do_Serwisu INT, Szacowana_Data DATE, Status_KM TEXT) AS $$
+RETURNS TABLE (Pojazd VARCHAR, Problem VARCHAR, Priorytet TEXT, Szacowana_Data DATE) AS $$
 DECLARE
     rec RECORD;
 BEGIN
     FOR rec IN
-        WITH OstatniSerwis AS (
-            -- Dodajemy p.Stan_Techniczny do pobieranych danych
-            SELECT p.ID_Pojazdu, p.Marka, p.Model, p.Przebieg, p.Rok_Produkcji, p.Stan_Techniczny,
-                   COALESCE(MAX(s.Przebieg_W_Chwili_Serwisu), 0) as serwis_km,
-                   COALESCE(MAX(s.Data_Serwisu), MAKE_DATE(p.Rok_Produkcji, 1, 1)) as data_start
-            FROM Pojazdy p LEFT JOIN Serwisy s ON p.ID_Pojazdu = s.ID_Pojazdu
-            GROUP BY p.ID_Pojazdu
-        )
-        SELECT os.*,
-               (os.Przebieg - os.serwis_km) as zrobione,
-               CASE
-                   WHEN (CURRENT_DATE - os.data_start) > 0
-                   THEN (os.Przebieg - os.serwis_km)::NUMERIC / (CURRENT_DATE - os.data_start)
-                   ELSE 0
-               END as daily_km
-        FROM OstatniSerwis os
+        SELECT
+            p.ID_Pojazdu, p.Marka, p.Model, p.Przebieg, p.Wymaga_Serwisu, p.Opis_Usterki,
+            COALESCE(MAX(s.Przebieg_W_Chwili_Serwisu), 0) as ost_serwis_km
+        FROM Pojazdy p
+        LEFT JOIN Serwisy s ON p.ID_Pojazdu = s.ID_Pojazdu
+        WHERE p.Status_Dostepnosci != 'W serwisie'
+        GROUP BY p.ID_Pojazdu
     LOOP
         Pojazd := rec.Marka || ' ' || rec.Model;
-        Stan_Faktyczny := rec.Stan_Techniczny;
-        Przebieg := rec.Przebieg;
-        Km_Do_Serwisu := limit_km_serwisu - rec.zrobione;
+        Szacowana_Data := CURRENT_DATE;
 
-        IF Km_Do_Serwisu <= 0 THEN
-            Szacowana_Data := CURRENT_DATE;
-            Status_KM := '❗ SERWIS TERAZ';
-        ELSIF rec.daily_km > 0 THEN
-            Szacowana_Data := CURRENT_DATE + (Km_Do_Serwisu / rec.daily_km)::INT;
-            IF Km_Do_Serwisu < 1000 THEN Status_KM := '⚠️ Wkrótce'; ELSE Status_KM := '✅ OK'; END IF;
-        ELSE
-            Szacowana_Data := NULL;
-            Status_KM := '✅ OK (Stoi)';
+        -- 1. TWARDA FLAGA Z BAZY (Najważniejsze!)
+        IF rec.Wymaga_Serwisu THEN
+            Problem := '⚠️ ZGŁOSZENIE: ' || COALESCE(rec.Opis_Usterki, 'Brak opisu');
+            Priorytet := 'WYSOKI (Awaria)';
+            RETURN NEXT;
+
+        -- 2. PRZEBIEG (Algorytm)
+        ELSIF (rec.Przebieg - rec.ost_serwis_km) >= limit_km_serwisu THEN
+            Problem := '🛢️ Wymiana oleju (Przebieg)';
+            Priorytet := 'ŚREDNI';
+            RETURN NEXT;
+
+        -- 3. Prewencja (zbliża się przegląd - opcjonalne, ale pomocne)
+        ELSIF (rec.Przebieg - rec.ost_serwis_km) >= (limit_km_serwisu - 1000) THEN
+            Problem := '⏳ Wkrótce przegląd';
+            Priorytet := 'NISKI';
+            RETURN NEXT;
         END IF;
-
-        RETURN NEXT;
     END LOOP;
 END;
 $$ LANGUAGE plpgsql;
 
-
+-- Wrapper dla UI
+CREATE OR REPLACE FUNCTION fn_pobierz_pojazdy_alert(limit_km INT)
+RETURNS TABLE (Pojazd VARCHAR, Problem VARCHAR, Priorytet TEXT, Szacowana_Data DATE) AS $$
+BEGIN
+    RETURN QUERY SELECT * FROM PrognozaSerwisowa(limit_km);
+END;
+$$ LANGUAGE plpgsql;
 
 -- 10. Szukaj Pojazdu
 CREATE OR REPLACE FUNCTION SzukajPojazdu(fraza TEXT)
@@ -784,7 +835,8 @@ BEGIN
     RETURN QUERY SELECT
         (SELECT COUNT(*) FROM Pojazdy),
         (SELECT COUNT(*) FROM Klienci),
-        (SELECT COUNT(*) FROM Rezerwacje WHERE Status_Rezerwacji = 'Potwierdzona');
+        -- POPRAWKA: Liczymy 'W trakcie' ORAZ 'Potwierdzona'
+        (SELECT COUNT(*) FROM Rezerwacje WHERE Status_Rezerwacji IN ('W trakcie', 'Potwierdzona'));
 END;
 $$ LANGUAGE plpgsql;
 
@@ -795,22 +847,5 @@ DECLARE v_id INT;
 BEGIN
     SELECT ID_Klienta INTO v_id FROM Klienci WHERE PESEL = p_pesel;
     RETURN v_id;
-END;
-$$ LANGUAGE plpgsql;
-
-
-DROP FUNCTION IF EXISTS fn_pobierz_pojazdy_alert(INT);
-
-CREATE OR REPLACE FUNCTION fn_pobierz_pojazdy_alert(limit_km INT)
-RETURNS TABLE (
-    Pojazd VARCHAR,
-    Stan_Faktyczny VARCHAR,
-    Przebieg INT,
-    Km_Do_Serwisu INT,
-    Szacowana_Data DATE,
-    Status_KM TEXT
-) AS $$
-BEGIN
-    RETURN QUERY SELECT * FROM PrognozaSerwisowa(limit_km);
 END;
 $$ LANGUAGE plpgsql;
