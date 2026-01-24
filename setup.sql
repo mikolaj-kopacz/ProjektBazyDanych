@@ -572,7 +572,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 3. Ranking Klientów VIP
+-- 3. Ranking Klientów VIP (POPRAWIONE)
 CREATE OR REPLACE FUNCTION RankingKlientowVIP(top_n INT)
 RETURNS TABLE (
     Klient TEXT,
@@ -643,6 +643,7 @@ BEGIN
     END LOOP;
 END;
 $$ LANGUAGE plpgsql;
+
 -- 4. Analiza przestojów
 CREATE OR REPLACE FUNCTION AnalizaPrzestojow(min_dni_przerwy INT)
 RETURNS TABLE (Pojazd VARCHAR, Data_Zwrotu DATE, Data_Nastepnego_Odbioru DATE, Dni_Przestoju INT) AS $$
