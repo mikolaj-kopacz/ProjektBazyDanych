@@ -34,19 +34,19 @@ CREATE TABLE model.Klienci (
     Nazwisko VARCHAR(50) NOT NULL,
     PESEL VARCHAR(11) UNIQUE NOT NULL,
     Numer_Prawa_Jazdy VARCHAR(20) UNIQUE NOT NULL,
-    Telefon VARCHAR(15) NOT NULL, -- ZMIANA: Wymagany
-    Email VARCHAR(100) NOT NULL,  -- ZMIANA: Wymagany
+    Telefon VARCHAR(15) NOT NULL,
+    Email VARCHAR(100) NOT NULL,
     Adres TEXT
 );
 
 CREATE TABLE model.Pojazdy (
     ID_Pojazdu SERIAL PRIMARY KEY,
-    ID_Klasy INT REFERENCES model.Klasy_Pojazdow(ID_Klasy),
+    ID_Klasy INT REFERENCES model.Klasy_Pojazdow(ID_Klasy) NOT NULL,
     Marka VARCHAR(50) NOT NULL,
     Model VARCHAR(50) NOT NULL,
     Rok_Produkcji INT,
     Numer_Rejestracyjny VARCHAR(20) UNIQUE NOT NULL,
-    Przebieg INT NOT NULL, -- ZMIANA: Wymagany
+    Przebieg INT NOT NULL,
     Stan_Techniczny VARCHAR(50),
     Status_Dostepnosci VARCHAR(20) CHECK (Status_Dostepnosci IN ('Dostępny', 'Wypożyczony', 'W serwisie')),
     Wymaga_Serwisu BOOLEAN DEFAULT FALSE,
@@ -55,21 +55,21 @@ CREATE TABLE model.Pojazdy (
 
 CREATE TABLE model.Rezerwacje (
     ID_Rezerwacji SERIAL PRIMARY KEY,
-    ID_Klienta INT REFERENCES model.Klienci(ID_Klienta),
-    ID_Pojazdu INT REFERENCES model.Pojazdy(ID_Pojazdu),
-    ID_Pracownika INT REFERENCES model.Pracownicy(ID_Pracownika),
+    ID_Klienta INT REFERENCES model.Klienci(ID_Klienta) NOT NULL,
+    ID_Pojazdu INT REFERENCES model.Pojazdy(ID_Pojazdu) NOT NULL,
+    ID_Pracownika INT REFERENCES model.Pracownicy(ID_Pracownika) NOT NULL,
     Data_Rezerwacji DATE DEFAULT CURRENT_DATE,
     Data_Odbioru DATE NOT NULL,
     Data_Zwrotu DATE NOT NULL,
     Miejsce_Odbioru VARCHAR(100),
-    Cena_Calkowita DECIMAL(10, 2) NOT NULL, -- ZMIANA: Wymagana
+    Cena_Calkowita DECIMAL(10, 2) NOT NULL,
     Status_Rezerwacji VARCHAR(20) CHECK (Status_Rezerwacji IN ('Potwierdzona', 'Anulowana', 'Zakończona', 'W trakcie')),
     CHECK (Data_Zwrotu >= Data_Odbioru)
 );
 
 CREATE TABLE model.Serwisy (
     ID_Serwisu SERIAL PRIMARY KEY,
-    ID_Pojazdu INT REFERENCES model.Pojazdy(ID_Pojazdu),
+    ID_Pojazdu INT REFERENCES model.Pojazdy(ID_Pojazdu) NOT NULL,
     Data_Serwisu DATE NOT NULL,
     Opis TEXT,
     Koszt DECIMAL(10, 2),
@@ -84,15 +84,14 @@ CREATE TABLE model.Uslugi_Dodatkowe (
 
 CREATE TABLE model.Rezerwacje_Uslugi (
     ID_Rezerwacji_Uslugi SERIAL PRIMARY KEY,
-    ID_Rezerwacji INT REFERENCES model.Rezerwacje(ID_Rezerwacji) ON DELETE CASCADE,
-    ID_Uslugi INT REFERENCES model.Uslugi_Dodatkowe(ID_Uslugi),
+    ID_Rezerwacji INT REFERENCES model.Rezerwacje(ID_Rezerwacji) ON DELETE CASCADE NOT NULL,
+    ID_Uslugi INT REFERENCES model.Uslugi_Dodatkowe(ID_Uslugi) NOT NULL,
     UNIQUE(ID_Rezerwacji, ID_Uslugi)
 );
 
 CREATE TABLE model.Platnosci (
     ID_Platnosci SERIAL PRIMARY KEY,
-    -- ZMIANA: ON DELETE CASCADE (Usunięcie rezerwacji usuwa płatność)
-    ID_Rezerwacji INT REFERENCES model.Rezerwacje(ID_Rezerwacji) ON DELETE CASCADE,
+    ID_Rezerwacji INT REFERENCES model.Rezerwacje(ID_Rezerwacji) ON DELETE CASCADE NOT NULL,
     Kwota_Calkowita DECIMAL(10, 2) NOT NULL,
     Data_Platnosci DATE DEFAULT CURRENT_DATE,
     Forma_Platnosci VARCHAR(20) CHECK (Forma_Platnosci IN ('Gotówka', 'Karta', 'Przelew')),
